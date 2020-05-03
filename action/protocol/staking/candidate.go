@@ -21,6 +21,15 @@ import (
 	"github.com/iotexproject/iotex-core/state"
 )
 
+type updateAmountType byte
+
+const (
+	_addBalance updateAmountType = iota
+	_subBalance
+	_addVote
+	_subVote
+)
+
 type (
 	// Candidate represents the candidate
 	Candidate struct {
@@ -113,25 +122,23 @@ func (d *Candidate) Collision(c *Candidate) error {
 }
 
 // AddVote adds vote
-func (d *Candidate) AddVote(amount *big.Int) error {
+func (d *Candidate) UpdateVote(amount *big.Int, update updateAmountType) error {
 	if amount.Sign() < 0 {
 		return ErrInvalidAmount
 	}
-	d.Votes.Add(d.Votes, amount)
-	return nil
-}
-
-// SubVote subtracts vote
-func (d *Candidate) SubVote(amount *big.Int) error {
-	if amount.Sign() < 0 {
-		return ErrInvalidAmount
+	switch update {
+	case _addVote:
+		d.Votes.Add(d.Votes, amount)
+		return nil
+	case _subVote:
+		if d.Votes.Cmp(amount) == -1 {
+			return ErrInvalidAmount
+		}
+		d.Votes.Sub(d.Votes, amount)
+		return nil
+	default:
+		panic("wrong update request")
 	}
-
-	if d.Votes.Cmp(amount) == -1 {
-		return ErrInvalidAmount
-	}
-	d.Votes.Sub(d.Votes, amount)
-	return nil
 }
 
 // AddSelfStake adds self stake

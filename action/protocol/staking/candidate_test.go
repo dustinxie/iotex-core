@@ -61,6 +61,10 @@ func TestSer(t *testing.T) {
 
 func TestClone(t *testing.T) {
 	r := require.New(t)
+	r.EqualValues(0, _addBalance)
+	r.EqualValues(1, _subBalance)
+	r.EqualValues(2, _addVote)
+	r.EqualValues(3, _subVote)
 
 	d := &Candidate{
 		Owner:              identityset.Address(1),
@@ -75,7 +79,7 @@ func TestClone(t *testing.T) {
 
 	d2 := d.Clone()
 	r.True(d.Equal(d2))
-	d.AddVote(big.NewInt(100))
+	d.UpdateVote(big.NewInt(100), _addVote)
 	r.False(d.Equal(d2))
 	r.NoError(d.Collision(d2))
 	d.Owner = identityset.Address(0)

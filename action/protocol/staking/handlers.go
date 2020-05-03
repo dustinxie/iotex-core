@@ -82,8 +82,7 @@ func (p *Protocol) handleCreateStake(ctx context.Context, act *action.CreateStak
 	actionCtx := protocol.MustGetActionCtx(ctx)
 	blkCtx := protocol.MustGetBlockCtx(ctx)
 
-	staker, fetchErr := fetchCaller(ctx, csm, act.Amount())
-	if fetchErr != nil {
+	if fetchErr := fetchCaller(ctx, csm, act.Amount()); fetchErr != nil {
 		return topics, fetchErr
 	}
 
@@ -103,33 +102,13 @@ func (p *Protocol) handleCreateStake(ctx context.Context, act *action.CreateStak
 	topics = append(topics, hash.BytesToHash256(byteutil.Uint64ToBytesBigEndian(bucketIdx)), hash.BytesToHash256(candidate.Owner.Bytes()))
 
 	// update candidate
-	weightedVote := p.calculateVoteWeight(bucket, false)
-	if err := candidate.AddVote(weightedVote); err != nil {
-		return topics, &handleError{
-			err:           errors.Wrapf(err, "failed to add vote for candidate %s", candidate.Owner.String()),
-			failureStatus: iotextypes.ReceiptStatus_ErrInvalidBucketAmount,
-		}
-	}
-	if err := csm.Upsert(candidate); err != nil {
-		return topics, &handleError{
-			err:           errors.Wrapf(err, "failed to put candidate %s", candidate.Owner.String()),
-			failureStatus: csmErrorToReceiptStatus(err),
-		}
+	if updateError := updateCandidate(csm, candidate, p.calculateVoteWeight(bucket, false), _addVote); updateError != nil {
+		return topics, updateError
 	}
 
 	// update staker balance
-	if err := staker.SubBalance(act.Amount()); err != nil {
-		return topics, &handleError{
-			err:           errors.Wrapf(err, "failed to update the balance of staker %s", actionCtx.Caller.String()),
-			failureStatus: iotextypes.ReceiptStatus_ErrNotEnoughBalance,
-		}
-	}
-	// put updated staker's account state to trie
-	if err := accountutil.StoreAccount(csm, actionCtx.Caller.String(), staker); err != nil {
-		return topics, &handleError{
-			err:           errors.Wrapf(err, "failed to store account %s", actionCtx.Caller.String()),
-			failureStatus: iotextypes.ReceiptStatus_ErrWriteAccount,
-		}
+	if updateError := updateCaller(csm, actionCtx.Caller, act.Amount(), _subBalance); updateError != nil {
+		return topics, updateError
 	}
 	return topics, handleSuccess
 }
@@ -140,8 +119,7 @@ func (p *Protocol) handleUnstake(ctx context.Context, act *action.Unstake, csm C
 	actionCtx := protocol.MustGetActionCtx(ctx)
 	blkCtx := protocol.MustGetBlockCtx(ctx)
 
-	_, fetchErr := fetchCaller(ctx, csm, big.NewInt(0))
-	if fetchErr != nil {
+	if fetchErr := fetchCaller(ctx, csm, big.NewInt(0)); fetchErr != nil {
 		return topics, fetchErr
 	}
 
@@ -179,22 +157,13 @@ func (p *Protocol) handleUnstake(ctx context.Context, act *action.Unstake, csm C
 		}
 	}
 
-	weightedVote := p.calculateVoteWeight(bucket, csm.ContainsSelfStakingBucket(act.BucketIndex()))
-	if err := candidate.SubVote(weightedVote); err != nil {
-		return topics, &handleError{
-			err:           errors.Wrapf(err, "failed to subtract vote for candidate %s", bucket.Candidate.String()),
-			failureStatus: iotextypes.ReceiptStatus_ErrNotEnoughBalance,
-		}
-	}
 	// clear candidate's self stake if the bucket is self staking
 	if csm.ContainsSelfStakingBucket(act.BucketIndex()) {
 		candidate.SelfStake = big.NewInt(0)
 	}
-	if err := csm.Upsert(candidate); err != nil {
-		return topics, &handleError{
-			err:           errors.Wrapf(err, "failed to put candidate %s", candidate.Owner.String()),
-			failureStatus: csmErrorToReceiptStatus(err),
-		}
+	if updateError := updateCandidate(csm, candidate, p.calculateVoteWeight(
+		bucket, csm.ContainsSelfStakingBucket(act.BucketIndex())), _subVote); updateError != nil {
+		return topics, updateError
 	}
 	return topics, handleSuccess
 }
@@ -205,8 +174,7 @@ func (p *Protocol) handleWithdrawStake(ctx context.Context, act *action.Withdraw
 	actionCtx := protocol.MustGetActionCtx(ctx)
 	blkCtx := protocol.MustGetBlockCtx(ctx)
 
-	withdrawer, fetchErr := fetchCaller(ctx, csm, big.NewInt(0))
-	if fetchErr != nil {
+	if fetchErr := fetchCaller(ctx, csm, big.NewInt(0)); fetchErr != nil {
 		return topics, fetchErr
 	}
 
@@ -240,18 +208,8 @@ func (p *Protocol) handleWithdrawStake(ctx context.Context, act *action.Withdraw
 	}
 
 	// update withdrawer balance
-	if err := withdrawer.AddBalance(bucket.StakedAmount); err != nil {
-		return topics, &handleError{
-			err:           errors.Wrapf(err, "failed to update the balance of withdrawer %s", actionCtx.Caller.String()),
-			failureStatus: iotextypes.ReceiptStatus_ErrInvalidBucketAmount,
-		}
-	}
-	// put updated withdrawer's account state to trie
-	if err := accountutil.StoreAccount(csm, actionCtx.Caller.String(), withdrawer); err != nil {
-		return topics, &handleError{
-			err:           errors.Wrapf(err, "failed to store account %s", actionCtx.Caller.String()),
-			failureStatus: iotextypes.ReceiptStatus_ErrWriteAccount,
-		}
+	if updateError := updateCaller(csm, actionCtx.Caller, bucket.StakedAmount, _addBalance); updateError != nil {
+		return topics, updateError
 	}
 	return topics, handleSuccess
 }
@@ -261,8 +219,7 @@ func (p *Protocol) handleChangeCandidate(ctx context.Context, act *action.Change
 	topics := action.Topics{hash.BytesToHash256([]byte(HandleChangeCandidate))}
 	actionCtx := protocol.MustGetActionCtx(ctx)
 
-	_, fetchErr := fetchCaller(ctx, csm, big.NewInt(0))
-	if fetchErr != nil {
+	if fetchErr := fetchCaller(ctx, csm, big.NewInt(0)); fetchErr != nil {
 		return topics, fetchErr
 	}
 
@@ -308,31 +265,13 @@ func (p *Protocol) handleChangeCandidate(ctx context.Context, act *action.Change
 
 	// update previous candidate
 	weightedVotes := p.calculateVoteWeight(bucket, false)
-	if err := prevCandidate.SubVote(weightedVotes); err != nil {
-		return topics, &handleError{
-			err:           errors.Wrapf(err, "failed to subtract vote for previous candidate %s", prevCandidate.Owner.String()),
-			failureStatus: iotextypes.ReceiptStatus_ErrNotEnoughBalance,
-		}
-	}
-	if err := csm.Upsert(prevCandidate); err != nil {
-		return topics, &handleError{
-			err:           errors.Wrapf(err, "failed to put previous candidate %s", prevCandidate.Owner.String()),
-			failureStatus: csmErrorToReceiptStatus(err),
-		}
+	if updateError := updateCandidate(csm, prevCandidate, weightedVotes, _subVote); updateError != nil {
+		return topics, updateError
 	}
 
 	// update current candidate
-	if err := candidate.AddVote(weightedVotes); err != nil {
-		return topics, &handleError{
-			err:           errors.Wrapf(err, "failed to add vote for candidate %s", candidate.Owner.String()),
-			failureStatus: iotextypes.ReceiptStatus_ErrInvalidBucketAmount,
-		}
-	}
-	if err := csm.Upsert(candidate); err != nil {
-		return topics, &handleError{
-			err:           errors.Wrapf(err, "failed to put candidate %s", candidate.Owner.String()),
-			failureStatus: csmErrorToReceiptStatus(err),
-		}
+	if updateError := updateCandidate(csm, candidate, weightedVotes, _addVote); updateError != nil {
+		return topics, updateError
 	}
 	return topics, handleSuccess
 }
@@ -342,8 +281,7 @@ func (p *Protocol) handleTransferStake(ctx context.Context, act *action.Transfer
 	topics := action.Topics{hash.BytesToHash256([]byte(HandleTransferStake))}
 	actionCtx := protocol.MustGetActionCtx(ctx)
 
-	_, fetchErr := fetchCaller(ctx, csm, big.NewInt(0))
-	if fetchErr != nil {
+	if fetchErr := fetchCaller(ctx, csm, big.NewInt(0)); fetchErr != nil {
 		return topics, fetchErr
 	}
 
@@ -385,8 +323,7 @@ func (p *Protocol) handleDepositToStake(ctx context.Context, act *action.Deposit
 	topics := action.Topics{hash.BytesToHash256([]byte(HandleDepositToStake))}
 	actionCtx := protocol.MustGetActionCtx(ctx)
 
-	depositor, fetchErr := fetchCaller(ctx, csm, act.Amount())
-	if fetchErr != nil {
+	if fetchErr := fetchCaller(ctx, csm, act.Amount()); fetchErr != nil {
 		return topics, fetchErr
 	}
 
@@ -419,17 +356,10 @@ func (p *Protocol) handleDepositToStake(ctx context.Context, act *action.Deposit
 	}
 
 	// update candidate
-	if err := candidate.SubVote(prevWeightedVotes); err != nil {
+	if err := candidate.UpdateVote(prevWeightedVotes, _subVote); err != nil {
 		return topics, &handleError{
 			err:           errors.Wrapf(err, "failed to subtract vote for candidate %s", bucket.Candidate.String()),
 			failureStatus: iotextypes.ReceiptStatus_ErrNotEnoughBalance,
-		}
-	}
-	weightedVotes := p.calculateVoteWeight(bucket, csm.ContainsSelfStakingBucket(act.BucketIndex()))
-	if err := candidate.AddVote(weightedVotes); err != nil {
-		return topics, &handleError{
-			err:           errors.Wrapf(err, "failed to add vote for candidate %s", candidate.Owner.String()),
-			failureStatus: iotextypes.ReceiptStatus_ErrInvalidBucketAmount,
 		}
 	}
 	if csm.ContainsSelfStakingBucket(act.BucketIndex()) {
@@ -440,26 +370,14 @@ func (p *Protocol) handleDepositToStake(ctx context.Context, act *action.Deposit
 			}
 		}
 	}
-	if err := csm.Upsert(candidate); err != nil {
-		return topics, &handleError{
-			err:           errors.Wrapf(err, "failed to put candidate %s", candidate.Owner.String()),
-			failureStatus: csmErrorToReceiptStatus(err),
-		}
+	if updateError := updateCandidate(csm, candidate, p.calculateVoteWeight(
+		bucket, csm.ContainsSelfStakingBucket(act.BucketIndex())), _addVote); updateError != nil {
+		return topics, updateError
 	}
 
 	// update depositor balance
-	if err := depositor.SubBalance(act.Amount()); err != nil {
-		return topics, &handleError{
-			err:           errors.Wrapf(err, "failed to update the balance of depositor %s", actionCtx.Caller.String()),
-			failureStatus: iotextypes.ReceiptStatus_ErrNotEnoughBalance,
-		}
-	}
-	// put updated depositor's account state to trie
-	if err := accountutil.StoreAccount(csm, actionCtx.Caller.String(), depositor); err != nil {
-		return topics, &handleError{
-			err:           errors.Wrapf(err, "failed to store account %s", actionCtx.Caller.String()),
-			failureStatus: iotextypes.ReceiptStatus_ErrWriteAccount,
-		}
+	if updateError := updateCaller(csm, actionCtx.Caller, act.Amount(), _subBalance); updateError != nil {
+		return topics, updateError
 	}
 	return topics, handleSuccess
 }
@@ -470,8 +388,7 @@ func (p *Protocol) handleRestake(ctx context.Context, act *action.Restake, csm C
 	actionCtx := protocol.MustGetActionCtx(ctx)
 	blkCtx := protocol.MustGetBlockCtx(ctx)
 
-	_, fetchErr := fetchCaller(ctx, csm, big.NewInt(0))
-	if fetchErr != nil {
+	if fetchErr := fetchCaller(ctx, csm, big.NewInt(0)); fetchErr != nil {
 		return topics, fetchErr
 	}
 
@@ -516,24 +433,15 @@ func (p *Protocol) handleRestake(ctx context.Context, act *action.Restake, csm C
 	}
 
 	// update candidate
-	if err := candidate.SubVote(prevWeightedVotes); err != nil {
+	if err := candidate.UpdateVote(prevWeightedVotes, _subVote); err != nil {
 		return topics, &handleError{
 			err:           errors.Wrapf(err, "failed to subtract vote for candidate %s", bucket.Candidate.String()),
 			failureStatus: iotextypes.ReceiptStatus_ErrNotEnoughBalance,
 		}
 	}
-	weightedVotes := p.calculateVoteWeight(bucket, csm.ContainsSelfStakingBucket(act.BucketIndex()))
-	if err := candidate.AddVote(weightedVotes); err != nil {
-		return topics, &handleError{
-			err:           errors.Wrapf(err, "failed to add vote for candidate %s", candidate.Owner.String()),
-			failureStatus: iotextypes.ReceiptStatus_ErrInvalidBucketAmount,
-		}
-	}
-	if err := csm.Upsert(candidate); err != nil {
-		return topics, &handleError{
-			err:           errors.Wrapf(err, "failed to put candidate %s", candidate.Owner.String()),
-			failureStatus: csmErrorToReceiptStatus(err),
-		}
+	if updateError := updateCandidate(csm, candidate, p.calculateVoteWeight(
+		bucket, csm.ContainsSelfStakingBucket(act.BucketIndex())), _addVote); updateError != nil {
+		return topics, updateError
 	}
 	return topics, handleSuccess
 }
@@ -546,8 +454,7 @@ func (p *Protocol) handleCandidateRegister(ctx context.Context, act *action.Cand
 
 	registrationFee := new(big.Int).Set(p.config.RegistrationConsts.Fee)
 
-	caller, fetchErr := fetchCaller(ctx, csm, new(big.Int).Add(act.Amount(), registrationFee))
-	if fetchErr != nil {
+	if fetchErr := fetchCaller(ctx, csm, new(big.Int).Add(act.Amount(), registrationFee)); fetchErr != nil {
 		return topics, fetchErr
 	}
 
@@ -609,18 +516,8 @@ func (p *Protocol) handleCandidateRegister(ctx context.Context, act *action.Cand
 	}
 
 	// update caller balance
-	if err := caller.SubBalance(act.Amount()); err != nil {
-		return topics, &handleError{
-			err:           errors.Wrapf(err, "failed to update the balance of register %s", actCtx.Caller.String()),
-			failureStatus: iotextypes.ReceiptStatus_ErrNotEnoughBalance,
-		}
-	}
-	// put updated caller's account state to trie
-	if err := accountutil.StoreAccount(csm, actCtx.Caller.String(), caller); err != nil {
-		return topics, &handleError{
-			err:           errors.Wrapf(err, "failed to store account %s", actCtx.Caller.String()),
-			failureStatus: iotextypes.ReceiptStatus_ErrWriteAccount,
-		}
+	if updateError := updateCaller(csm, actCtx.Caller, act.Amount(), _subBalance); updateError != nil {
+		return topics, updateError
 	}
 
 	// put registrationFee to reward pool
@@ -638,8 +535,7 @@ func (p *Protocol) handleCandidateUpdate(ctx context.Context, act *action.Candid
 	topics := action.Topics{hash.BytesToHash256([]byte(HandleCandidateUpdate))}
 	actCtx := protocol.MustGetActionCtx(ctx)
 
-	_, fetchErr := fetchCaller(ctx, csm, big.NewInt(0))
-	if fetchErr != nil {
+	if fetchErr := fetchCaller(ctx, csm, big.NewInt(0)); fetchErr != nil {
 		return topics, fetchErr
 	}
 
@@ -669,6 +565,52 @@ func (p *Protocol) handleCandidateUpdate(ctx context.Context, act *action.Candid
 		}
 	}
 	return topics, handleSuccess
+}
+
+func updateCandidate(csm CandidateStateManager, candidate *Candidate, vote *big.Int, update updateAmountType) protocol.HandleError {
+	if err := candidate.UpdateVote(vote, update); err != nil {
+		return &handleError{
+			err:           errors.Wrapf(err, "failed to update vote for candidate %s", candidate.Owner.String()),
+			failureStatus: iotextypes.ReceiptStatus_ErrInvalidBucketAmount,
+		}
+	}
+	if err := csm.Upsert(candidate); err != nil {
+		return &handleError{
+			err:           errors.Wrapf(err, "failed to put candidate %s", candidate.Owner.String()),
+			failureStatus: csmErrorToReceiptStatus(err),
+		}
+	}
+	return nil
+}
+
+func updateCaller(csm CandidateStateManager, caller address.Address, balance *big.Int, update updateAmountType) protocol.HandleError {
+	acc, _ := accountutil.LoadAccount(csm, hash.BytesToHash160(caller.Bytes()))
+	switch update {
+	case _addBalance:
+		if err := acc.AddBalance(balance); err != nil {
+			return &handleError{
+				err:           errors.Wrapf(err, "failed to update the balance of caller %s", caller.String()),
+				failureStatus: iotextypes.ReceiptStatus_ErrInvalidBucketAmount,
+			}
+		}
+	case _subBalance:
+		if err := acc.SubBalance(balance); err != nil {
+			return &handleError{
+				err:           errors.Wrapf(err, "failed to update the balance of caller %s", caller.String()),
+				failureStatus: iotextypes.ReceiptStatus_ErrNotEnoughBalance,
+			}
+		}
+	default:
+		panic("wrong update request")
+	}
+	// put updated caller's account state
+	if err := accountutil.StoreAccount(csm, caller.String(), acc); err != nil {
+		return &handleError{
+			err:           errors.Wrapf(err, "failed to store account %s", caller.String()),
+			failureStatus: iotextypes.ReceiptStatus_ErrWriteAccount,
+		}
+	}
+	return nil
 }
 
 func (p *Protocol) fetchBucket(
@@ -735,12 +677,12 @@ func delBucketAndIndex(sm protocol.StateManager, owner, cand address.Address, in
 	return nil
 }
 
-func fetchCaller(ctx context.Context, sr protocol.StateReader, amount *big.Int) (*state.Account, protocol.HandleError) {
+func fetchCaller(ctx context.Context, sr protocol.StateReader, amount *big.Int) protocol.HandleError {
 	actionCtx := protocol.MustGetActionCtx(ctx)
 
 	caller, err := accountutil.LoadAccount(sr, hash.BytesToHash160(actionCtx.Caller.Bytes()))
 	if err != nil {
-		return nil, &handleError{
+		return &handleError{
 			err:           errors.Wrapf(err, "failed to load the account of caller %s", actionCtx.Caller.String()),
 			failureStatus: iotextypes.ReceiptStatus_Failure,
 		}
@@ -748,12 +690,12 @@ func fetchCaller(ctx context.Context, sr protocol.StateReader, amount *big.Int) 
 	gasFee := big.NewInt(0).Mul(actionCtx.GasPrice, big.NewInt(0).SetUint64(actionCtx.IntrinsicGas))
 	// check caller's balance
 	if gasFee.Add(amount, gasFee).Cmp(caller.Balance) == 1 {
-		return nil, &handleError{
-			err: errors.Wrapf(state.ErrNotEnoughBalance,"caller %s balance not enough", actionCtx.Caller.String()),
+		return &handleError{
+			err:           errors.Wrapf(state.ErrNotEnoughBalance, "caller %s balance not enough", actionCtx.Caller.String()),
 			failureStatus: iotextypes.ReceiptStatus_ErrNotEnoughBalance,
 		}
 	}
-	return caller, nil
+	return nil
 }
 
 func csmErrorToReceiptStatus(err error) iotextypes.ReceiptStatus {
