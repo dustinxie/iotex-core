@@ -23,7 +23,6 @@ import (
 	"github.com/iotexproject/iotex-core/p2p"
 	"github.com/iotexproject/iotex-core/pkg/ha"
 	"github.com/iotexproject/iotex-core/pkg/log"
-	"github.com/iotexproject/iotex-core/pkg/probe"
 	"github.com/iotexproject/iotex-core/pkg/routine"
 	"github.com/iotexproject/iotex-core/pkg/util/httputil"
 )
@@ -38,7 +37,6 @@ type Server struct {
 	dispatcher           dispatcher.Dispatcher
 	initializedSubChains map[uint32]bool
 	mutex                sync.RWMutex
-	subModuleCancel      context.CancelFunc
 }
 
 // NewServer creates a new server
@@ -97,17 +95,15 @@ func (s *Server) Start(ctx context.Context) error {
 		return errors.Wrap(ha.ErrServiceStarted, "itx server")
 	}
 
-	cctx, cancel := context.WithCancel(context.Background())
-	s.subModuleCancel = cancel
 	for _, cs := range s.chainservices {
-		if err := cs.Start(cctx); err != nil {
+		if err := cs.Start(ctx); err != nil {
 			return errors.Wrap(err, "error when starting blockchain")
 		}
 	}
-	if err := s.p2pAgent.Start(cctx); err != nil {
+	if err := s.p2pAgent.Start(ctx); err != nil {
 		return errors.Wrap(err, "error when starting P2P agent")
 	}
-	if err := s.dispatcher.Start(cctx); err != nil {
+	if err := s.dispatcher.Start(ctx); err != nil {
 		return errors.Wrap(err, "error when starting dispatcher")
 	}
 	s.Ready()
@@ -121,7 +117,6 @@ func (s *Server) Stop(ctx context.Context) error {
 		return nil
 	}
 
-	defer s.subModuleCancel()
 	if err := s.p2pAgent.Stop(ctx); err != nil {
 		// notest
 		return errors.Wrap(err, "error when stopping P2P agent")
@@ -186,17 +181,11 @@ func (s *Server) Dispatcher() dispatcher.Dispatcher {
 }
 
 // StartServer starts a node server
-func StartServer(ctx context.Context, svr *Server, probeSvr *probe.Server, cfg config.Config) {
+func StartServer(ctx context.Context, svr *Server, cfg config.Config) {
 	if err := svr.Start(ctx); err != nil {
 		log.L().Fatal("Failed to start server.", zap.Error(err))
 		return
 	}
-	defer func() {
-		if err := svr.Stop(ctx); err != nil {
-			log.L().Panic("Failed to stop server.", zap.Error(err))
-		}
-	}()
-	probeSvr.Ready()
 
 	if cfg.System.HeartbeatInterval > 0 {
 		task := routine.NewRecurringTask(NewHeartbeatHandler(svr, cfg.Network).Log, cfg.System.HeartbeatInterval)
@@ -242,7 +231,4 @@ func StartServer(ctx context.Context, svr *Server, probeSvr *probe.Server, cfg c
 			}
 		}()
 	}
-
-	<-ctx.Done()
-	probeSvr.NotReady()
 }

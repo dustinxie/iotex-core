@@ -76,7 +76,6 @@ func main() {
 	signal.Notify(stop, os.Interrupt)
 	signal.Notify(stop, syscall.SIGTERM)
 	ctx, cancel := context.WithCancel(context.Background())
-	stopped := make(chan struct{})
 	livenessCtx, livenessCancel := context.WithCancel(context.Background())
 
 	genesisCfg, err := genesis.New(genesisPath)
@@ -122,11 +121,20 @@ func main() {
 	if err := probeSvr.Start(ctx); err != nil {
 		log.L().Fatal("Failed to start probe server.", zap.Error(err))
 	}
+	// create and start the node
+	svr, err := itx.NewServer(cfg)
+	if err != nil {
+		log.L().Fatal("Failed to create server.", zap.Error(err))
+	}
+
 	go func() {
 		<-stop
-		// start stopping
+		// stop server
 		cancel()
-		<-stopped
+		probeSvr.NotReady()
+		if err := svr.Stop(ctx); err != nil {
+			log.L().Error("Failed to stop server.", zap.Error(err))
+		}
 
 		// liveness end
 		if err := probeSvr.Stop(livenessCtx); err != nil {
@@ -134,12 +142,6 @@ func main() {
 		}
 		livenessCancel()
 	}()
-
-	// create and start the node
-	svr, err := itx.NewServer(cfg)
-	if err != nil {
-		log.L().Fatal("Failed to create server.", zap.Error(err))
-	}
 
 	var cfgsub config.Config
 	if _subChainPath != "" {
@@ -157,8 +159,8 @@ func main() {
 		}
 	}
 
-	itx.StartServer(ctx, svr, probeSvr, cfg)
-	close(stopped)
+	itx.StartServer(ctx, svr, cfg)
+	probeSvr.Ready()
 	<-livenessCtx.Done()
 }
 
