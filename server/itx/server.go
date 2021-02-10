@@ -30,6 +30,7 @@ import (
 
 // Server is the iotex server instance containing all components.
 type Server struct {
+	ha.Readiness
 	cfg                  config.Config
 	rootChainService     *chainservice.ChainService
 	chainservices        map[uint32]*chainservice.ChainService
@@ -92,6 +93,10 @@ func newServer(cfg config.Config, testing bool) (*Server, error) {
 
 // Start starts the server
 func (s *Server) Start(ctx context.Context) error {
+	if s.CannotStart() {
+		return errors.Wrap(ha.ErrServiceStarted, "itx server")
+	}
+
 	cctx, cancel := context.WithCancel(context.Background())
 	s.subModuleCancel = cancel
 	for _, cs := range s.chainservices {
@@ -105,12 +110,17 @@ func (s *Server) Start(ctx context.Context) error {
 	if err := s.dispatcher.Start(cctx); err != nil {
 		return errors.Wrap(err, "error when starting dispatcher")
 	}
-
+	s.Ready()
 	return nil
 }
 
 // Stop stops the server
 func (s *Server) Stop(ctx context.Context) error {
+	if s.CannotStop() {
+		log.L().Warn("itx server isn't ready yet")
+		return nil
+	}
+
 	defer s.subModuleCancel()
 	if err := s.p2pAgent.Stop(ctx); err != nil {
 		// notest
@@ -125,6 +135,7 @@ func (s *Server) Stop(ctx context.Context) error {
 			return errors.Wrap(err, "error when stopping blockchain")
 		}
 	}
+	s.NotReady()
 	return nil
 }
 

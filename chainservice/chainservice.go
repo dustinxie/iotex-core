@@ -44,12 +44,14 @@ import (
 	"github.com/iotexproject/iotex-core/consensus"
 	"github.com/iotexproject/iotex-core/db"
 	"github.com/iotexproject/iotex-core/p2p"
+	"github.com/iotexproject/iotex-core/pkg/ha"
 	"github.com/iotexproject/iotex-core/pkg/log"
 	"github.com/iotexproject/iotex-core/state/factory"
 )
 
 // ChainService is a blockchain service with all blockchain components.
 type ChainService struct {
+	ha.Readiness
 	actpool           actpool.ActPool
 	blocksync         blocksync.BlockSync
 	consensus         consensus.Consensus
@@ -422,6 +424,10 @@ func New(
 
 // Start starts the server
 func (cs *ChainService) Start(ctx context.Context) error {
+	if cs.CannotStart() {
+		return errors.Wrap(ha.ErrServiceStarted, "chain service")
+	}
+
 	if cs.electionCommittee != nil {
 		if err := cs.electionCommittee.Start(ctx); err != nil {
 			return errors.Wrap(err, "error when starting election committee")
@@ -457,12 +463,17 @@ func (cs *ChainService) Start(ctx context.Context) error {
 			return errors.Wrap(err, "err when starting API server")
 		}
 	}
-
+	cs.Ready()
 	return nil
 }
 
 // Stop stops the server
 func (cs *ChainService) Stop(ctx context.Context) error {
+	if cs.CannotStop() {
+		log.L().Warn("chain service isn't ready yet")
+		return nil
+	}
+
 	if cs.indexBuilder != nil {
 		if err := cs.indexBuilder.Stop(ctx); err != nil {
 			return errors.Wrap(err, "error when stopping index builder")
@@ -494,8 +505,11 @@ func (cs *ChainService) Stop(ctx context.Context) error {
 		}
 	}
 	if cs.electionCommittee != nil {
-		return cs.electionCommittee.Stop(ctx)
+		if err := cs.electionCommittee.Stop(ctx); err != nil {
+			return errors.Wrap(err, "error when stopping election committee")
+		}
 	}
+	cs.NotReady()
 	return nil
 }
 
