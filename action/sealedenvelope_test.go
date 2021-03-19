@@ -54,8 +54,7 @@ func TestSealedEnvelope_Signature(t *testing.T) {
 	req := require.New(t)
 	se, err := createSealedEnvelope()
 	req.NoError(err)
-	res := se.Signature()
-	req.Equal(signByte, res)
+	req.Equal(signByte, se.signature)
 }
 func TestSealedEnvelope_LoadProto(t *testing.T) {
 	req := require.New(t)

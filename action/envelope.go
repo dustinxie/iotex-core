@@ -4,6 +4,7 @@ import (
 	"math/big"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/iotexproject/go-pkgs/crypto"
 	"github.com/iotexproject/go-pkgs/hash"
 	"github.com/iotexproject/iotex-proto/golang/iotextypes"
 	"github.com/pkg/errors"
@@ -14,11 +15,13 @@ import (
 
 // Envelope defines an envelope wrapped on action with some envelope metadata.
 type Envelope struct {
-	version  uint32
-	nonce    uint64
-	gasLimit uint64
-	payload  actionPayload
-	gasPrice *big.Int
+	version   uint32
+	nonce     uint64
+	gasLimit  uint64
+	payload   actionPayload
+	gasPrice  *big.Int
+	srcPubkey crypto.PublicKey
+	signature []byte
 }
 
 // Version returns the version
@@ -74,8 +77,7 @@ func (elp *Envelope) Proto() *iotextypes.ActionCore {
 	}
 
 	// TODO assert each action
-	act := elp.Action()
-	switch act := act.(type) {
+	switch act := elp.Action().(type) {
 	case *Transfer:
 		actCore.Action = &iotextypes.ActionCore_Transfer{Transfer: act.Proto()}
 	case *Execution:
@@ -140,6 +142,15 @@ func (elp *Envelope) LoadProto(pbAct *iotextypes.ActionCore) error {
 			return err
 		}
 		elp.payload = act
+	case pbAct.GetRlpTransaction() != nil:
+		act := &RlpTx{}
+		if err := act.LoadProto(pbAct.GetRlpTransaction()); err != nil {
+			return err
+		}
+		// RLP-encoded tx is self-contained (nonce, gas, to, amount, data, signature)
+		// need to assign these back to Envelope
+		elp.payload = act
+		act.backfill(elp)
 	case pbAct.GetGrantReward() != nil:
 		act := &GrantReward{}
 		if err := act.LoadProto(pbAct.GetGrantReward()); err != nil {
@@ -230,8 +241,11 @@ func (elp *Envelope) Serialize() []byte {
 	return byteutil.Must(proto.Marshal(elp.Proto()))
 }
 
-// Hash returns the hash value of SealedEnvelope.
+// Hash returns the hash value of Envelope.
 func (elp *Envelope) Hash() hash.Hash256 {
+	if elp.payload.IsRLP() {
+		return elp.payload.RawHash()
+	}
 	return hash.Hash256b(elp.Serialize())
 }
 

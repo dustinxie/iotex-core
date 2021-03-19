@@ -41,6 +41,11 @@ func (act *AbstractAction) GasPrice() *big.Int {
 	return p.Set(act.gasPrice)
 }
 
+// RawHash is the placeholder for actionPayload.RawHash()
+func (act *AbstractAction) RawHash() hash.Hash256 {
+	panic("should not call RawHash() on AbstractAction")
+}
+
 // Hash is the placeholder for actionPayload.Hash()
 func (act *AbstractAction) Hash() hash.Hash256 {
 	panic("should not call Hash() on AbstractAction")
@@ -58,6 +63,11 @@ func (act *AbstractAction) BasicActionSize() uint32 {
 	}
 
 	return uint32(size)
+}
+
+// IsRLP returns false for AbstractAction
+func (act *AbstractAction) IsRLP() bool {
+	return false
 }
 
 // SetEnvelopeContext sets the SealedEnvelope context to action context.

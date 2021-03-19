@@ -13,6 +13,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/iotexproject/go-pkgs/crypto"
+	"github.com/iotexproject/go-pkgs/hash"
 )
 
 var (
@@ -30,8 +31,11 @@ type Action interface {
 
 type actionPayload interface {
 	Action
+	IsRLP() bool
 	Cost() (*big.Int, error)
 	IntrinsicGas() (uint64, error)
+	RawHash() hash.Hash256
+	Hash() hash.Hash256
 }
 
 type hasDestination interface {
@@ -40,8 +44,10 @@ type hasDestination interface {
 
 // Sign signs the action using sender's private key
 func Sign(act Envelope, sk crypto.PrivateKey) (SealedEnvelope, error) {
+	if act.payload.IsRLP() {
+		panic("not allowed to sign RLP-encoded tx")
+	}
 	sealed := SealedEnvelope{Envelope: act}
-
 	sealed.srcPubkey = sk.PublicKey()
 
 	hash := act.Hash()
@@ -58,9 +64,9 @@ func Sign(act Envelope, sk crypto.PrivateKey) (SealedEnvelope, error) {
 // This method should be only used in tests.
 func FakeSeal(act Envelope, pubk crypto.PublicKey) SealedEnvelope {
 	sealed := SealedEnvelope{
-		Envelope:  act,
-		srcPubkey: pubk,
+		Envelope: act,
 	}
+	sealed.srcPubkey = pubk
 	sealed.payload.SetEnvelopeContext(sealed)
 	return sealed
 }
@@ -69,10 +75,10 @@ func FakeSeal(act Envelope, pubk crypto.PublicKey) SealedEnvelope {
 // This method should be only used in tests.
 func AssembleSealedEnvelope(act Envelope, pk crypto.PublicKey, sig []byte) SealedEnvelope {
 	sealed := SealedEnvelope{
-		Envelope:  act,
-		srcPubkey: pk,
-		signature: sig,
+		Envelope: act,
 	}
+	sealed.srcPubkey = pk
+	sealed.signature = sig
 	sealed.payload.SetEnvelopeContext(sealed)
 	return sealed
 }
@@ -89,14 +95,14 @@ func Verify(sealed SealedEnvelope) error {
 	}
 
 	hash := sealed.Envelope.Hash()
-	if sealed.SrcPubkey().Verify(hash[:], sealed.Signature()) {
+	if sealed.SrcPubkey().Verify(hash[:], sealed.signature) {
 		return nil
 	}
 	return errors.Wrapf(
 		ErrAction,
 		"failed to verify action hash = %x and signature = %x",
 		hash,
-		sealed.Signature(),
+		sealed.signature,
 	)
 }
 
