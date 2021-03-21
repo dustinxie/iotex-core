@@ -72,7 +72,7 @@ func TestTransfer(t *testing.T) {
 	require.Equal(uint64(100000), tsf.GasLimit())
 	require.Equal("10", tsf.GasPrice().Text(10))
 	require.Equal(uint64(0), tsf.Nonce())
-	require.Equal(senderKey.PublicKey().HexString(), tsf.SenderPublicKey().HexString())
+	require.Equal(senderKey.PublicKey().HexString(), w.SrcPubkey().HexString())
 	require.Equal(recipientAddr.String(), tsf.Recipient())
 	require.Equal(recipientAddr.String(), tsf.Destination())
 	require.Equal(uint32(87), tsf.TotalSize())

@@ -185,7 +185,7 @@ func ExecuteContract(
 		blkCtx.BlockHeight,
 		hu.IsPre(config.Aleutian, blkCtx.BlockHeight),
 		hu.IsPost(config.Greenland, blkCtx.BlockHeight),
-		execution.Hash(),
+		actionCtx.ActionHash,
 	)
 	ps, err := newParams(ctx, execution, stateDB, getBlockHash)
 	if err != nil {
@@ -198,7 +198,7 @@ func ExecuteContract(
 	receipt := &action.Receipt{
 		GasConsumed:     ps.gas - remainingGas,
 		BlockHeight:     blkCtx.BlockHeight,
-		ActionHash:      execution.Hash(),
+		ActionHash:      actionCtx.ActionHash,
 		ContractAddress: contractAddress,
 	}
 
