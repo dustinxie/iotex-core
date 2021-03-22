@@ -14,6 +14,7 @@ import (
 	"github.com/iotexproject/go-pkgs/hash"
 	"github.com/iotexproject/iotex-address/address"
 
+	"github.com/iotexproject/iotex-core/action"
 	"github.com/iotexproject/iotex-core/action/protocol"
 	"github.com/iotexproject/iotex-core/state"
 )
@@ -109,4 +110,21 @@ func AccountStateWithHeight(sr protocol.StateReader, encodedAddr string) (*state
 		return nil, h, errors.Wrapf(err, "error when loading state of %x", pkHash)
 	}
 	return &account, h, nil
+}
+
+// AssertRlpTx checks whether the recipient is address or contract, and exist or not
+func AssertRlpTx(tsf *action.RlpTx, sr protocol.StateReader) (bool, error) {
+	if tsf.Contract() == action.EmptyAddress {
+		// this is contract deploy
+		return true, nil
+	}
+	recipientAddr, err := address.FromString(tsf.Recipient())
+	if err != nil {
+		return false, err
+	}
+	recipientAcct, err := LoadAccount(sr, hash.BytesToHash160(recipientAddr.Bytes()))
+	if err != nil {
+		return false, err
+	}
+	return recipientAcct.IsContract(), nil
 }

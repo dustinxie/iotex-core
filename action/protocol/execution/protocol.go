@@ -16,6 +16,7 @@ import (
 	"github.com/iotexproject/iotex-address/address"
 	"github.com/iotexproject/iotex-core/action"
 	"github.com/iotexproject/iotex-core/action/protocol"
+	accountutil "github.com/iotexproject/iotex-core/action/protocol/account/util"
 	"github.com/iotexproject/iotex-core/action/protocol/execution/evm"
 	"github.com/iotexproject/iotex-core/pkg/log"
 )
@@ -62,16 +63,29 @@ func FindProtocol(registry *protocol.Registry) *Protocol {
 
 // Handle handles an execution
 func (p *Protocol) Handle(ctx context.Context, act action.Action, sm protocol.StateManager) (*action.Receipt, error) {
-	exec, ok := act.(*action.Execution)
-	if !ok {
+	var exec evm.CanExecute
+	switch act := act.(type) {
+	case *action.Execution:
+		exec = act
+	case *action.RlpTx:
+		isContract, err := accountutil.AssertRlpTx(act, sm)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to process contract address %s", act.Contract())
+		}
+		if isContract {
+			exec = act
+		} else {
+			// not contract address, ignore it
+			return nil, nil
+		}
+	default:
 		return nil, nil
 	}
-	_, receipt, err := evm.ExecuteContract(ctx, sm, exec, p.getBlockHash, p.depositGas)
 
+	_, receipt, err := evm.ExecuteContract(ctx, sm, exec, p.getBlockHash, p.depositGas)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to execute contract")
 	}
-
 	return receipt, nil
 }
 

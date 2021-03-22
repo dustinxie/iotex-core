@@ -17,6 +17,7 @@ import (
 	"github.com/iotexproject/iotex-address/address"
 	"github.com/iotexproject/iotex-core/action"
 	"github.com/iotexproject/iotex-core/action/protocol"
+	accountutil "github.com/iotexproject/iotex-core/action/protocol/account/util"
 	"github.com/iotexproject/iotex-core/pkg/log"
 	"github.com/iotexproject/iotex-core/state"
 )
@@ -63,20 +64,34 @@ func FindProtocol(registry *protocol.Registry) *Protocol {
 
 // Handle handles an account
 func (p *Protocol) Handle(ctx context.Context, act action.Action, sm protocol.StateManager) (*action.Receipt, error) {
+	var tsf canTransfer
 	switch act := act.(type) {
 	case *action.Transfer:
-		return p.handleTransfer(ctx, act, sm)
+		tsf = act
+	case *action.RlpTx:
+		isContract, err := accountutil.AssertRlpTx(act, sm)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to process recipient address %s", act.Recipient())
+		}
+		if !isContract {
+			tsf = act
+		} else {
+			// not transfer address, ignore it
+			return nil, nil
+		}
+	default:
+		return nil, nil
 	}
-	return nil, nil
+	return p.handleTransfer(ctx, tsf, sm)
 }
 
 // Validate validates an account action
 func (p *Protocol) Validate(ctx context.Context, act action.Action, sr protocol.StateReader) error {
-	switch act := act.(type) {
+	switch tsf := act.(type) {
 	case *action.Transfer:
-		if err := p.validateTransfer(ctx, act); err != nil {
-			return errors.Wrap(err, "error when validating transfer action")
-		}
+		return errors.Wrap(p.validateTransfer(ctx, tsf), "error when validating transfer action")
+	case *action.RlpTx:
+		return errors.Wrap(p.validateTransfer(ctx, tsf), "error when validating transfer action")
 	}
 	return nil
 }

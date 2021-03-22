@@ -66,6 +66,20 @@ func MakeTransfer(db vm.StateDB, fromHash, toHash common.Address, amount *big.In
 	})
 }
 
+var (
+	_ CanExecute = (*action.Execution)(nil)
+	_ CanExecute = (*action.RlpTx)(nil)
+)
+
+type CanExecute interface {
+	Nonce() uint64
+	Amount() *big.Int
+	GasPrice() *big.Int
+	GasLimit() uint64
+	Contract() string
+	Data() []byte
+}
+
 type (
 	// Params is the context and parameters
 	Params struct {
@@ -82,7 +96,7 @@ type (
 // newParams creates a new context for use in the EVM.
 func newParams(
 	ctx context.Context,
-	execution *action.Execution,
+	execution CanExecute,
 	stateDB *StateDBAdapter,
 	getBlockHash GetBlockHash,
 ) (*Params, error) {
@@ -172,7 +186,7 @@ func securityDeposit(ps *Params, stateDB vm.StateDB, gasLimit uint64) error {
 func ExecuteContract(
 	ctx context.Context,
 	sm protocol.StateManager,
-	execution *action.Execution,
+	execution CanExecute,
 	getBlockHash GetBlockHash,
 	depositGasFunc DepositGas,
 ) ([]byte, *action.Receipt, error) {

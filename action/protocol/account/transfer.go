@@ -25,15 +25,25 @@ import (
 // TransferSizeLimit is the maximum size of transfer allowed
 const TransferSizeLimit = 32 * 1024
 
+var (
+	_ canTransfer = (*action.Transfer)(nil)
+	_ canTransfer = (*action.RlpTx)(nil)
+)
+
+type canTransfer interface {
+	Nonce() uint64
+	Amount() *big.Int
+	GasPrice() *big.Int
+	Recipient() string
+	TotalSize() uint32
+}
+
 // handleTransfer handles a transfer
-func (p *Protocol) handleTransfer(ctx context.Context, act action.Action, sm protocol.StateManager) (*action.Receipt, error) {
+func (p *Protocol) handleTransfer(ctx context.Context, tsf canTransfer, sm protocol.StateManager) (*action.Receipt, error) {
 	actionCtx := protocol.MustGetActionCtx(ctx)
 	bcCtx := protocol.MustGetBlockchainCtx(ctx)
 	blkCtx := protocol.MustGetBlockCtx(ctx)
-	tsf, ok := act.(*action.Transfer)
-	if !ok {
-		return nil, nil
-	}
+
 	// check sender
 	sender, err := accountutil.LoadOrCreateAccount(sm, actionCtx.Caller.String())
 	if err != nil {
@@ -147,11 +157,7 @@ func (p *Protocol) handleTransfer(ctx context.Context, act action.Action, sm pro
 }
 
 // validateTransfer validates a transfer
-func (p *Protocol) validateTransfer(_ context.Context, act action.Action) error {
-	tsf, ok := act.(*action.Transfer)
-	if !ok {
-		return nil
-	}
+func (p *Protocol) validateTransfer(_ context.Context, tsf canTransfer) error {
 	// Reject oversized transfer
 	if tsf.TotalSize() > TransferSizeLimit {
 		return errors.Wrap(action.ErrActPool, "oversized data")
