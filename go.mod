@@ -1,6 +1,6 @@
 module github.com/iotexproject/iotex-core
 
-go 1.13
+go 1.16
 
 require (
 	github.com/btcsuite/btcd v0.20.1-beta // indirect
