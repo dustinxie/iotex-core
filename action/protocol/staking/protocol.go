@@ -333,13 +333,12 @@ func (p *Protocol) handle(ctx context.Context, act action.Action, csm CandidateS
 		logs = append(logs, l)
 	}
 	if err == nil {
+		actionCtx := protocol.MustGetActionCtx(ctx)
+		log.L().Info("committed staking action", zap.String("actionHash", hex.EncodeToString(actionCtx.ActionHash[:])))
 		return p.settleAction(ctx, csm, uint64(iotextypes.ReceiptStatus_Success), logs, tLogs)
 	}
 
 	if receiptErr, ok := err.(ReceiptError); ok {
-		actionCtx := protocol.MustGetActionCtx(ctx)
-		log.L().With(
-			zap.String("actionHash", hex.EncodeToString(actionCtx.ActionHash[:]))).Info("Failed to commit staking action", zap.Error(err))
 		return p.settleAction(ctx, csm, receiptErr.ReceiptStatus(), logs, tLogs)
 	}
 	return nil, err

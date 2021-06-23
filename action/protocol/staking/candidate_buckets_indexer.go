@@ -8,8 +8,9 @@ package staking
 
 import (
 	"context"
-
+	"github.com/iotexproject/iotex-core/pkg/log"
 	"github.com/pkg/errors"
+	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/iotexproject/go-pkgs/hash"
@@ -109,6 +110,12 @@ func (cbi *CandidatesBucketsIndexer) Stop(ctx context.Context) error {
 
 // PutCandidates puts candidates into indexer
 func (cbi *CandidatesBucketsIndexer) PutCandidates(height uint64, candidates *iotextypes.CandidateListV2) error {
+	log.L().Info("put cands", zap.Int("size", len(candidates.Candidates)))
+	for _, v := range candidates.Candidates {
+		b, _ := proto.Marshal(v)
+		h := hash.Hash160b(b)
+		log.L().Info("put cands", zap.String("name", v.Name), log.Hex("bytes", h[:]))
+	}
 	candidatesBytes, err := proto.Marshal(candidates)
 	if err != nil {
 		return err
@@ -155,6 +162,7 @@ func (cbi *CandidatesBucketsIndexer) GetCandidates(height uint64, offset, limit 
 
 // PutBuckets puts vote buckets into indexer
 func (cbi *CandidatesBucketsIndexer) PutBuckets(height uint64, buckets *iotextypes.VoteBucketList) error {
+	log.L().Info("put buckets", zap.Int("size", len(buckets.Buckets)))
 	bucketsBytes, err := proto.Marshal(buckets)
 	if err != nil {
 		return err
@@ -222,6 +230,7 @@ func (cbi *CandidatesBucketsIndexer) putToIndexer(ns string, height uint64, data
 	heightBytes := byteutil.Uint64ToBytesBigEndian(height)
 	if dataExist {
 		// same bytes already exist, do nothing
+		log.L().Info("hit height", zap.Uint64("height", height), zap.String("ns", string(heightKey)))
 		return cbi.kvStore.Put(StakingMetaNamespace, heightKey, heightBytes)
 	}
 
@@ -236,8 +245,10 @@ func (cbi *CandidatesBucketsIndexer) putToIndexer(ns string, height uint64, data
 	// update latest hash
 	if ns == StakingCandidatesNamespace {
 		cbi.latestCandidatesHash = h
+		log.L().Info("new cands", zap.Uint64("height", height), log.Hex("hash", h[:]))
 	} else {
 		cbi.latestBucketsHash = h
+		log.L().Info("new buckets", zap.Uint64("height", height), log.Hex("hash", h[:]))
 	}
 	return nil
 }
