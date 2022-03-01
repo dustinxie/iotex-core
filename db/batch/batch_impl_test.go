@@ -187,9 +187,14 @@ func TestSnapshot(t *testing.T) {
 	v, err = cb.Get(bucket1, testK2[2])
 	require.NoError(err)
 	require.Equal(testV2[2], v)
+	cb.Put(bucket1, testK2[2], testV2[1], "")
+	v, _ = cb.Get(bucket1, testK2[2])
+	require.Equal(testV2[1], v)
 
 	// snapshot 1
 	require.NoError(cb.Revert(2))
+	v, _ = cb.Get(bucket1, testK2[2])
+	require.Equal(testV2[2], v)
 	require.NoError(cb.Revert(1))
 	_, err = cb.Get(bucket1, testK1[0])
 	require.Equal(ErrAlreadyDeleted, err)

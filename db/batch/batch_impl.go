@@ -297,8 +297,7 @@ func (cb *cachedBatch) Revert(snapshot int) error {
 	cb.batchShots = cb.batchShots[:cb.tag]
 	cb.kvStoreBatch.truncate(cb.batchShots[snapshot])
 	cb.cacheShots = cb.cacheShots[:cb.tag]
-	cb.KVStoreCache = nil
-	cb.KVStoreCache = cb.cacheShots[snapshot]
+	cb.KVStoreCache = cb.cacheShots[snapshot].Clone()
 	return nil
 }
 
