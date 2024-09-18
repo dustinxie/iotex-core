@@ -73,8 +73,10 @@ func (tx *AccessListTx) BlobHashes() []common.Hash { return nil }
 func (tx *AccessListTx) BlobTxSidecar() *types.BlobTxSidecar { return nil }
 
 func (tx *AccessListTx) SanityCheck() error {
-	// Reject execution of negative gas price
-	if tx.gasPrice != nil && tx.gasPrice.Sign() < 0 {
+	if tx.gasPrice == nil {
+		return ErrMissRequiredField
+	}
+	if tx.gasPrice.Sign() < 0 {
 		return ErrNegativeValue
 	}
 	return nil

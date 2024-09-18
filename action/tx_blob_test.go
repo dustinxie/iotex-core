@@ -24,11 +24,7 @@ import (
 
 func TestBlobTx(t *testing.T) {
 	r := require.New(t)
-	testACL := types.AccessList{
-		{Address: common.Address{}, StorageKeys: nil},
-		{Address: _c1, StorageKeys: []common.Hash{_k1, {}, _k3}},
-		{Address: _c2, StorageKeys: []common.Hash{_k2, _k3, _k4, _k1}},
-	}
+	testACL := createTestACL()
 	testBlob := createTestBlobTxData()
 	expect := &BlobTx{
 		chainID:    3,
@@ -98,7 +94,7 @@ func TestBlobTx(t *testing.T) {
 	t.Run("build from setter", func(t *testing.T) {
 		tx := (&EnvelopeBuilder{}).SetVersion(BlobTxType).SetChainID(expect.ChainID()).SetNonce(expect.Nonce()).
 			SetGasLimit(expect.Gas()).SetDynamicGas(expect.GasFeeCap(), expect.GasTipCap()).
-			SetAccessList(testACL).SetBlobTxData(testBlob.blobFeeCap, testBlob.blobHashes, testBlob.sidecar).
+			SetAccessList(expect.AccessList()).SetBlobTxData(testBlob.blobFeeCap, testBlob.blobHashes, testBlob.sidecar).
 			SetAction(&Transfer{}).Build()
 		blob, ok := tx.(*envelope).common.(*BlobTx)
 		r.True(ok)
