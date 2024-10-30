@@ -6,16 +6,26 @@
 package db
 
 import (
+	"bytes"
 	"context"
+	"math"
 	"syscall"
 
 	"github.com/cockroachdb/pebble"
+	"github.com/cockroachdb/pebble/bloom"
 	"github.com/pkg/errors"
+	bolt "go.etcd.io/bbolt"
 	"go.uber.org/zap"
 
-	"github.com/iotexproject/iotex-core/db/batch"
-	"github.com/iotexproject/iotex-core/pkg/lifecycle"
-	"github.com/iotexproject/iotex-core/pkg/log"
+	"github.com/iotexproject/go-pkgs/hash"
+	"github.com/iotexproject/iotex-core/v2/db/batch"
+	"github.com/iotexproject/iotex-core/v2/pkg/lifecycle"
+	"github.com/iotexproject/iotex-core/v2/pkg/log"
+)
+
+const (
+	_nsHashLen    = 4  // chance of namespace collision = 1/2^64
+	_keyPrefixLen = 12 // first 12-bytes of key
 )
 
 // PebbleVersioned is KVStore implementation based on pebble DB
@@ -39,12 +49,13 @@ func NewPebbleVersioned(cfg Config) *PebbleVersioned {
 func (b *PebbleVersioned) Start(_ context.Context) error {
 	comparer := pebble.DefaultComparer
 	comparer.Split = func(a []byte) int {
-		return prefixLength
+		return _nsHashLen + _keyPrefixLen
 	}
 	db, err := pebble.Open(b.path, &pebble.Options{
 		Comparer:           comparer,
 		FormatMajorVersion: pebble.FormatPrePebblev1MarkedCompacted,
 		ReadOnly:           b.config.ReadOnly,
+		Levels:             []pebble.LevelOptions{{FilterPolicy: bloom.FilterPolicy(10)}},
 	})
 	if err != nil {
 		return errors.Wrap(ErrIO, err.Error())
@@ -65,14 +76,14 @@ func (b *PebbleVersioned) Stop(_ context.Context) error {
 }
 
 // Get retrieves a record
-func (b *PebbleVersioned) Get(ns string, key []byte) ([]byte, error) {
+func (b *PebbleVersioned) getNV(ns string, key []byte) ([]byte, error) {
 	if !b.IsReady() {
 		return nil, ErrDBNotStarted
 	}
-	v, closer, err := b.db.Get(nsKey(ns, key))
+	v, closer, err := b.db.Get(concatNsKey(ns, key))
 	if err != nil {
 		if errors.Is(err, pebble.ErrNotFound) {
-			return nil, errors.Wrapf(ErrNotExist, "ns %s key = %x doesn't exist, %s", ns, key, err.Error())
+			return nil, errors.Wrapf(ErrNotExist, "PebbleVersioned.getNV(): ns %s key = %x doesn't exist, %s", ns, key, err.Error())
 		}
 		return nil, err
 	}
@@ -82,91 +93,170 @@ func (b *PebbleVersioned) Get(ns string, key []byte) ([]byte, error) {
 }
 
 // Put inserts a <key, value> record
-func (b *PebbleVersioned) Put(ns string, key, value []byte) (err error) {
+func (b *PebbleVersioned) Put(version uint64, ns string, key, value []byte) (err error) {
 	if !b.IsReady() {
 		return ErrDBNotStarted
 	}
-	err = b.db.Set(nsKey(ns, key), value, nil)
+	// check namespace
+	vn, err := b.checkNamespace(ns)
 	if err != nil {
-		if errors.Is(err, syscall.ENOSPC) {
-			log.L().Fatal("Failed to put db.", zap.Error(err))
+		return err
+	}
+	buf := b.db.NewBatch()
+	if vn == nil {
+		// namespace not yet created
+		buf.Set(concatNsKey(ns, _minKey), (&versionedNamespace{
+			keyLen: uint32(len(key)),
+		}).serialize(), nil)
+	} else {
+		if len(key) != int(vn.keyLen) {
+			return errors.Wrapf(ErrInvalid, "PebbleVersioned.Put(): invalid key length, expecting %d, got %d", vn.keyLen, len(key))
 		}
-		err = errors.Wrap(ErrIO, err.Error())
-	}
-	return
-}
-
-// Delete deletes a record,if key is nil,this will delete the whole bucket
-func (b *PebbleVersioned) Delete(ns string, key []byte) (err error) {
-	if !b.IsReady() {
-		return ErrDBNotStarted
-	}
-	if key == nil {
-		panic("delete whole ns not supported by PebbleDB")
-	}
-	err = b.db.Delete(nsKey(ns, key), nil)
-	if err != nil {
-		if errors.Is(err, syscall.ENOSPC) {
-			log.L().Fatal("Failed to delete db.", zap.Error(err))
+		last, _, err := b.get(math.MaxUint64, ns, key)
+		if !isNotExist(err) && version < last {
+			// not allowed to perform write on an earlier version
+			return ErrInvalid
 		}
-		err = errors.Wrap(ErrIO, err.Error())
+		buf.Delete(keyForDelete(concatNsKey(ns, key), version), nil)
 	}
-	return
-}
+	buf.Set(keyForWrite(concatNsKey(ns, key), version), value, nil)
 
-// WriteBatch commits a batch
-func (b *PebbleVersioned) WriteBatch(kvsb batch.KVStoreBatch) error {
-	if !b.IsReady() {
-		return ErrDBNotStarted
-	}
-
-	batch, err := b.dedup(kvsb)
-	if err != nil {
-		return nil
-	}
-	err = batch.Commit(nil)
-	if err != nil {
+	if err = buf.Commit(nil); err != nil {
 		if errors.Is(err, syscall.ENOSPC) {
-			log.L().Fatal("Failed to write batch db.", zap.Error(err))
+			log.L().Fatal("PebbleVersioned.Put(): failed to write to db", zap.Error(err))
 		}
 		err = errors.Wrap(ErrIO, err.Error())
 	}
 	return err
 }
 
-func (b *PebbleVersioned) dedup(kvsb batch.KVStoreBatch) (*pebble.Batch, error) {
-	kvsb.Lock()
-	defer kvsb.Unlock()
-
-	type doubleKey struct {
-		ns  string
-		key string
-	}
-	// remove duplicate keys, only keep the last write for each key
+func (b *PebbleVersioned) get(version uint64, ns string, key []byte) (uint64, []byte, error) {
 	var (
-		entryKeySet = make(map[doubleKey]struct{})
-		ch          = b.db.NewBatch()
+		last     uint64
+		isDelete bool
+		value    []byte
+
+		min = keyForDelete(key, 0)
+		key = keyForWrite(key, version)
 	)
-	for i := kvsb.Size() - 1; i >= 0; i-- {
-		write, e := kvsb.Entry(i)
-		if e != nil {
-			return nil, e
-		}
-		// only handle Put and Delete
-		if write.WriteType() != batch.Put && write.WriteType() != batch.Delete {
-			continue
-		}
-		key := write.Key()
-		k := doubleKey{ns: write.Namespace(), key: string(key)}
-		if _, ok := entryKeySet[k]; !ok {
-			entryKeySet[k] = struct{}{}
-			// add into batch
-			if write.WriteType() == batch.Put {
-				ch.Set(nsKey(write.Namespace(), key), write.Value(), nil)
-			} else {
-				ch.Delete(nsKey(write.Namespace(), key), nil)
+
+	iter, err := b.db.NewIter(&pebble.IterOptions{})
+	if err != nil {
+		return 0, nil, errors.Wrap(err, "PebbleVersioned.get(): failed to create iterator")
+	}
+	if !iter.SeekPrefixGE(key) {
+		// no valid key exists
+		return 0, nil, errors.Wrapf(ErrNotExist, "PebbleVersioned.get(): failed to seek key = %x\n")
+	}
+	k, v := iter.Key(), iter.Value()
+
+	err := b.db.db.View(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte(ns))
+		var (
+			c    = bucket.Cursor()
+			k, v = c.Seek(key)
+		)
+		if k == nil || bytes.Compare(k, key) == 1 {
+			k, v = c.Prev()
+			if k == nil || bytes.Compare(k, min) <= 0 {
+				// cursor is at the beginning/end of the bucket or smaller than minimum key
+				return ErrNotExist
 			}
 		}
+		isDelete, last = parseKey(k)
+		value = make([]byte, len(v))
+		copy(value, v)
+		return nil
+	})
+	if err != nil {
+		return last, nil, err
 	}
-	return ch, nil
+	if isDelete {
+		return last, nil, ErrDeleted
+	}
+	return last, value, nil
+}
+
+// Delete deletes a record,if key is nil,this will delete the whole bucket
+func (b *PebbleVersioned) Delete(ns string, key []byte) error {
+	if !b.IsReady() {
+		return ErrDBNotStarted
+	}
+	if key == nil {
+		return errors.Wrap(ErrNotSupported, "PebbleVersioned.Delete(): delete whole ns not supported")
+	}
+	err := b.db.Delete(concatNsKey(ns, key), nil)
+	if err != nil {
+		if errors.Is(err, syscall.ENOSPC) {
+			log.L().Fatal("Failed to delete db.", zap.Error(err))
+		}
+		err = errors.Wrap(ErrIO, err.Error())
+	}
+	return err
+}
+
+// Version returns the key's most recent version
+func (b *PebbleVersioned) Version(ns string, key []byte) (uint64, error) {
+	if !b.IsReady() {
+		return 0, ErrDBNotStarted
+	}
+	// check key's metadata
+	if err := b.checkNamespaceAndKey(ns, key); err != nil {
+		return 0, err
+	}
+	last, _, err := b.get(math.MaxUint64, ns, key)
+	if isNotExist(err) {
+		// key not yet written
+		err = errors.Wrapf(ErrNotExist, "PebbleVersioned.Version(): key = %x doesn't exist", key)
+	}
+	return last, err
+}
+
+// CommitToDB write a batch to DB, where the batch can contain keys for
+// both versioned and non-versioned namespace
+func (b *PebbleVersioned) CommitToDB(version uint64, vns map[string]bool, kvsb batch.KVStoreBatch) error {
+	vnsize, ve, nve, err := dedup(vns, kvsb)
+	if err != nil {
+		return errors.Wrap(err, "PebbleVersioned.CommitToDB(): failed to dedup batch")
+	}
+	return b.commitToDB(version, vnsize, ve, nve)
+}
+
+func (b *PebbleVersioned) commitToDB(version uint64, vnsize map[string]int, ve, nve []*batch.WriteInfo) error {
+	return nil
+}
+
+func concatNsKey(ns string, key []byte) []byte {
+	h := hash.Hash160b([]byte(ns))
+	return append(h[:_nsHashLen], key...)
+}
+
+func (b *PebbleVersioned) checkNamespace(ns string) (*versionedNamespace, error) {
+	data, err := b.getNV(ns, _minKey)
+	switch errors.Cause(err) {
+	case nil:
+		vn, err := deserializeVersionedNamespace(data)
+		if err != nil {
+			return nil, err
+		}
+		return vn, nil
+	case ErrNotExist, ErrBucketNotExist:
+		return nil, nil
+	default:
+		return nil, err
+	}
+}
+
+func (b *PebbleVersioned) checkNamespaceAndKey(ns string, key []byte) error {
+	vn, err := b.checkNamespace(ns)
+	if err != nil {
+		return err
+	}
+	if vn == nil {
+		return errors.Wrapf(ErrNotExist, "namespace = %x doesn't exist", ns)
+	}
+	if len(key) != int(vn.keyLen) {
+		return errors.Wrapf(ErrInvalid, "invalid key length, expecting %d, got %d", vn.keyLen, len(key))
+	}
+	return nil
 }

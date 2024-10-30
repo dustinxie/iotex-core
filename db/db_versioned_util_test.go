@@ -8,8 +8,10 @@ package db
 
 import (
 	"encoding/hex"
+	"fmt"
 	"testing"
 
+	"github.com/iotexproject/go-pkgs/hash"
 	"github.com/stretchr/testify/require"
 )
 
@@ -23,4 +25,15 @@ func TestPb(t *testing.T) {
 	vn1, err := deserializeVersionedNamespace(data)
 	r.NoError(err)
 	r.Equal(vn, vn1)
+}
+
+func TestSlice(t *testing.T) {
+	r := require.New(t)
+
+	h := hash.Hash160b([]byte("testing slice"))
+	fmt.Printf("hash = %p, %x\n", h[:4], h)
+	key := append(h[:4], 0)
+	fmt.Printf("key = %p, %x\n", key, key)
+	r.Equal(5, len(key))
+	fmt.Printf("hash = %p, %x\n", h[:4], h)
 }
