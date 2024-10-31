@@ -161,6 +161,28 @@ func TestCalculateVoteWeight(t *testing.T) {
 			expected:  big.NewInt(125),
 		},
 		{
+			name:   "Native 1050 days, auto-stake enabled, self-stake disabled",
+			consts: consts,
+			voteBucket: &VoteBucket{
+				StakedDuration: time.Duration(1050) * 24 * time.Hour,
+				AutoStake:      true,
+				StakedAmount:   big.NewInt(100),
+			},
+			selfStake: false,
+			expected:  big.NewInt(141),
+		},
+		{
+			name:   "Native max days, auto-stake enabled, self-stake disabled",
+			consts: consts,
+			voteBucket: &VoteBucket{
+				StakedDuration: time.Duration(106751) * 24 * time.Hour,
+				AutoStake:      true,
+				StakedAmount:   big.NewInt(100),
+			},
+			selfStake: false,
+			expected:  big.NewInt(167),
+		},
+		{
 			name:   "NFT, auto-stake enabled",
 			consts: consts,
 			voteBucket: &VoteBucket{
