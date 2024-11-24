@@ -1,6 +1,7 @@
 package staking
 
 import (
+	"fmt"
 	"math/big"
 	"slices"
 	"sort"
@@ -24,6 +25,7 @@ type (
 	ReviseConfig struct {
 		VoteWeight                  genesis.VoteWeightCalConsts
 		ReviseHeights               []uint64
+		FixAliasForNonStopHeight    uint64
 		CorrectCandsHeight          uint64
 		SelfStakeBucketReviseHeight uint64
 		CorrectCandSelfStakeHeight  uint64
@@ -42,7 +44,24 @@ func NewVoteReviser(cfg ReviseConfig) *VoteReviser {
 // Revise recalculate candidate votes on preset revising height.
 func (vr *VoteReviser) Revise(ctx protocol.FeatureCtx, csm CandidateStateManager, height uint64) error {
 	if !vr.isCacheExist(height) {
-		cands, _, err := newCandidateStateReader(csm.SM()).getAllCandidates()
+		var (
+			cands CandidateList
+			err   error
+		)
+		if vr.fixAliasForNonStopNode(height) {
+			println("reload one time")
+			name, operator, owners, err := readCandCenterStateFromStateDB(csm.SM())
+			if err != nil {
+				return err
+			}
+			base := csm.DirtyView().candCenter.base
+			if err := base.loadNameOperatorMapOwnerList(name, operator, owners); err != nil {
+				return err
+			}
+			cands = base.all()
+		} else {
+			cands, _, err = newCandidateStateReader(csm.SM()).getAllCandidates()
+		}
 		switch {
 		case errors.Cause(err) == state.ErrStateNotExist:
 		case err != nil:
@@ -71,24 +90,49 @@ func (vr *VoteReviser) Revise(ctx protocol.FeatureCtx, csm CandidateStateManager
 				return err
 			}
 		}
-		vr.storeToCache(height, cands)
+		if vr.needRevise(height) {
+			vr.storeToCache(height, cands)
+		}
 	}
-	return vr.flush(height, csm)
+	if vr.needRevise(height) {
+		return vr.flush(height, csm)
+	}
+	return nil
 }
 
 func (vr *VoteReviser) correctAliasCands(csm CandidateStateManager, cands CandidateList) (CandidateList, error) {
-	var retval CandidateList
-	for _, c := range csm.DirtyView().candCenter.base.nameMap {
+	println("cands =", len(cands))
+	var (
+		retval CandidateList
+		base   = csm.DirtyView().candCenter.base
+	)
+	for _, c := range base.nameMap {
 		retval = append(retval, c)
 	}
-	for _, c := range csm.DirtyView().candCenter.base.operatorMap {
+	println("name map =", len(retval))
+	sort.Sort(retval)
+	for _, cand := range retval {
+		fmt.Printf("name = %s, op = %s, votes = %s\n", cand.Name, cand.Operator.String(), cand.Votes.String())
+	}
+	var opMap CandidateList
+	for _, c := range base.operatorMap {
+		opMap = append(opMap, c)
 		retval = append(retval, c)
+	}
+	println("op map =", len(opMap))
+	sort.Sort(opMap)
+	for _, cand := range opMap {
+		fmt.Printf("name = %s, op = %s, votes = %s\n", cand.Name, cand.Operator.String(), cand.Votes.String())
 	}
 	sort.Sort(retval)
 	ownerMap := map[string]*Candidate{}
-	for _, cand := range csm.DirtyView().candCenter.base.owners {
+	println("new map =", len(base.owners))
+	sort.Sort(base.owners)
+	for _, cand := range base.owners {
 		ownerMap[cand.Owner.String()] = cand
+		fmt.Printf("name = %s, op = %s, votes = %s\n", cand.Name, cand.Operator.String(), cand.Votes.String())
 	}
+	println("owner map =", len(cands))
 	for _, c := range cands {
 		if owner, ok := ownerMap[c.Owner.String()]; ok {
 			c.Operator = owner.Operator
@@ -96,7 +140,9 @@ func (vr *VoteReviser) correctAliasCands(csm CandidateStateManager, cands Candid
 			c.Name = owner.Name
 		}
 		retval = append(retval, c)
+		fmt.Printf("name = %s, op = %s, votes = %s\n", c.Name, c.Operator.String(), c.Votes.String())
 	}
+	println("total commit =", len(retval))
 	return retval, nil
 }
 
@@ -166,13 +212,19 @@ func (vr *VoteReviser) isCacheExist(height uint64) bool {
 
 // NeedRevise returns true if height needs revise
 func (vr *VoteReviser) NeedRevise(height uint64) bool {
+	return vr.needRevise(height) || vr.fixAliasForNonStopNode(height)
+}
+func (vr *VoteReviser) needRevise(height uint64) bool {
 	return slices.Contains(vr.cfg.ReviseHeights, height) ||
 		vr.shouldReviseSelfStakeBuckets(height) ||
 		vr.shouldReviseAlias(height) ||
 		vr.shouldCorrectCandSelfStake(height)
 }
 
-// NeedCorrectCands returns true if height needs to correct candidates
+func (vr *VoteReviser) fixAliasForNonStopNode(height uint64) bool {
+	return height == vr.cfg.FixAliasForNonStopHeight
+}
+
 func (vr *VoteReviser) shouldReviseAlias(height uint64) bool {
 	return height == vr.cfg.CorrectCandsHeight
 }
