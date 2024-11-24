@@ -87,7 +87,7 @@ var (
 		ChainDBPath:                "/var/data/chain.db",
 		TrieDBPatchFile:            "/var/data/trie.db.patch",
 		TrieDBPath:                 "/var/data/trie.db",
-		StakingPatchDir:            "/var/data",
+		StakingPatchDir:            "./",
 		IndexDBPath:                "/var/data/index.db",
 		BloomfilterIndexDBPath:     "/var/data/bloomfilter.index.db",
 		CandidateIndexDBPath:       "/var/data/candidate.index.db",
