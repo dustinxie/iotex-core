@@ -546,6 +546,8 @@ func (p *agent) connectBootNode(ctx context.Context) error {
 			}
 		case <-conn:
 			connNum++
+		case <-ctx.Done():
+			return errors.Wrap(ctx.Err(), "context error when connecting bootnode")
 		}
 		// can add more condition later
 		if connNum >= desiredConnNum {

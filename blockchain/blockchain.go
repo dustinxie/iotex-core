@@ -117,7 +117,7 @@ type (
 		// PutBlockHeader stores the pending block header
 		PutBlockHeader(*block.Header)
 		// CancelBlock indicates the block producing fails
-		CancelBlock(uint64)
+		CancelBlock(uint64) []uint64
 	}
 
 	// blockchain implements the Blockchain interface

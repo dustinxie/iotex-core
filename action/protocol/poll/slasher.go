@@ -644,7 +644,8 @@ func currentEpochProductivity(sr protocol.StateReader, start uint64, end uint64,
 			zap.Uint64("expected", expectedCount),
 			zap.Uint64("actual", count),
 		)
-		return nil, errors.New("block metas from stateDB doesn't have enough data for given start, end height")
+		return stats, nil
+		// return nil, errors.New("block metas from stateDB doesn't have enough data for given start, end height")
 	}
 	return stats, nil
 }

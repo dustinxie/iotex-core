@@ -124,10 +124,21 @@ func main() {
 		config.System.SystemLogDBPath = systemLogDBPath
 		config.Chain.ContractStakingIndexDBPath = contractStakingIndexDBPath
 		config.Chain.BlobStoreDBPath = blobDBPath
+		config.ActPool.Store = nil
 		if i == 0 {
 			config.Network.BootstrapNodes = []string{}
 			config.Network.MasterKey = "bootnode"
 		}
+		for k := 0; k < _numNodes; k++ {
+			config.Genesis.Staking.BootstrapCandidates = append(config.Genesis.Staking.BootstrapCandidates, genesis.BootstrapCandidate{
+				OperatorAddress:   chainAddrs[k].EncodedAddr,
+				RewardAddress:     chainAddrs[k].EncodedAddr,
+				OwnerAddress:      chainAddrs[k].EncodedAddr,
+				Name:              fmt.Sprintf("bot-%d", k),
+				SelfStakingTokens: "5200000000000000000000000",
+			})
+		}
+
 		config.Genesis.VanuatuBlockHeight = 1
 		testutil.NormalizeGenesisHeights(&config.Genesis.Blockchain)
 		configs[i] = config
@@ -509,12 +520,15 @@ func newConfig(
 	cfg.API.WebSocketPort = webSocketPort
 
 	cfg.Genesis.BlockInterval = 6 * time.Second
-	cfg.Genesis.Blockchain.NumSubEpochs = 2
+	cfg.Genesis.Blockchain.NumSubEpochs = 15
 	cfg.Genesis.Blockchain.NumDelegates = _numNodes
 	cfg.Genesis.Blockchain.TimeBasedRotation = true
-	cfg.Genesis.Delegates = cfg.Genesis.Delegates[3 : _numNodes+3]
+	// cfg.Genesis.Delegates = cfg.Genesis.Delegates[3 : _numNodes+3]
 	cfg.Genesis.EnableGravityChainVoting = false
-	cfg.Genesis.PollMode = "lifeLong"
+	cfg.Genesis.PollMode = "native"
+	cfg.Genesis.ScoreThreshold = "0"
+	cfg.Genesis.SelfStakingThreshold = "0"
+	cfg.Genesis.VoteThreshold = "0"
 
 	return cfg
 }
