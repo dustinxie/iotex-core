@@ -190,10 +190,15 @@ func (cm *chainManager) ChainAddress() string {
 }
 
 func (cm *chainManager) DraftHeight() uint64 {
+	tip := cm.TipHeight()
 	if cm.ws == nil {
-		return cm.TipHeight()
+		return tip
 	}
-	return cm.ws.OngoingBlockHeight()
+	draft := cm.ws.OngoingBlockHeight()
+	if draft > tip {
+		return draft
+	}
+	return tip
 }
 
 func (cm *chainManager) DropDraftBlock(height uint64) {

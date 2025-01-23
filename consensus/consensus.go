@@ -117,10 +117,11 @@ func NewConsensus(
 			switch epochNum {
 			case tipEpochNum:
 				candidatesList, err = ops.pp.Delegates(ctx, sf)
-			case tipEpochNum + 1:
-				candidatesList, err = ops.pp.NextDelegates(ctx, sf)
+			// case tipEpochNum + 1:
 			default:
-				err = errors.Errorf("invalid epoch number %d compared to tip epoch number %d", epochNum, tipEpochNum)
+				candidatesList, err = ops.pp.NextDelegates(ctx, sf)
+				// default:
+				// 	err = errors.Errorf("invalid epoch number %d compared to tip epoch number %d", epochNum, tipEpochNum)
 			}
 			if err != nil {
 				return nil, err

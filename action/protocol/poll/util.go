@@ -173,6 +173,7 @@ func setCandidates(
 	} else {
 		accountCreationOpts = append(accountCreationOpts, state.DelegateCandidateOption())
 	}
+	log.L().Debug("setCandidates", zap.Uint64("height", height), zap.Any("candidates", candidates))
 	for _, candidate := range candidates {
 		addr, err := address.FromString(candidate.Address)
 		if err != nil {
