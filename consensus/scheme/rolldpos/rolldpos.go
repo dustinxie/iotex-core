@@ -530,7 +530,8 @@ func (b *Builder) BuildV2() (*RollDPoS, error) {
 	if b.clock == nil {
 		b.clock = clock.New()
 	}
-	b.cfg.DB.DbPath = "" // disable consensus db
+	// b.cfg.DB.DbPath = b.cfg.Consensus.ConsensusDBPath
+	b.cfg.DB.DbPath = ""
 	b.cfg.Consensus.Delay = 0
 	ctx, err := NewRollDPoSCtx(
 		consensusfsm.NewConsensusConfig(b.cfg.Consensus.FSM, b.cfg.DardanellesUpgrade, b.cfg.Genesis, b.cfg.Consensus.Delay),

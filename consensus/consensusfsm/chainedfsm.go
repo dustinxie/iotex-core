@@ -158,7 +158,7 @@ func (m *ChainedConsensusFSM) prepare(evt fsm.Event) (fsm.State, error) {
 	defer log.L().Debug("Handled event", zap.String("event", string(evt.Type())))
 	if err := m.ctx.Prepare(); err != nil {
 		m.ctx.Logger().Error("Error during prepare", zap.Error(err), zap.Stack("stack"))
-		return m.Invalid()
+		return m.BackToPrepare(100 * time.Millisecond)
 	}
 	m.ctx.Logger().Debug("Start a new round", zap.Stack("stack"))
 	proposal, err := m.ctx.Proposal()

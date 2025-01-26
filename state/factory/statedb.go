@@ -176,7 +176,14 @@ func (sdb *stateDB) Height() (uint64, error) {
 }
 
 func (sdb *stateDB) OngoingBlockHeight() uint64 {
-	return sdb.chamber.OngoingBlockHeight()
+	sdb.mutex.RLock()
+	defer sdb.mutex.RUnlock()
+	tip, err := sdb.dao.getHeight()
+	if err != nil {
+		panic(err)
+	}
+	ongoing := sdb.chamber.OngoingBlockHeight()
+	return max(ongoing, tip)
 }
 
 func (sdb *stateDB) PendingBlockHeader(height uint64) (*block.Header, error) {
@@ -256,6 +263,12 @@ func (sdb *stateDB) NewBlockBuilder(
 	ctx = protocol.WithRegistry(ctx, sdb.registry)
 	sdb.mutex.RLock()
 	currHeight := sdb.chamber.OngoingBlockHeight()
+	tip, err := sdb.dao.getHeight()
+	if err != nil {
+		sdb.mutex.RUnlock()
+		return nil, err
+	}
+	currHeight = max(currHeight, tip)
 	sdb.mutex.RUnlock()
 	ws, err := sdb.newWorkingSet(ctx, currHeight+1)
 	if err != nil {
