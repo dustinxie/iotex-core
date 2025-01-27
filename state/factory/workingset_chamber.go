@@ -65,6 +65,7 @@ func (cmb *chamber) AbandonWorkingSets(h uint64) []uint64 {
 			break
 		}
 	}
+	cmb.height = min(cmb.height, h-1)
 	return abandoned
 }
 

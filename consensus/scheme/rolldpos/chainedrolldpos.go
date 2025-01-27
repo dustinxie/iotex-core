@@ -2,7 +2,6 @@ package rolldpos
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
@@ -87,26 +86,26 @@ func (cr *ChainedRollDPoS) Start(ctx context.Context) error {
 			}
 		}
 	}()
-	cr.wg.Add(1)
-	go func() {
-		defer cr.wg.Done()
-		ticker := time.NewTicker(5 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-cr.quit:
-				return
-			case <-ticker.C:
-				cr.mutex.RLock()
-				fmt.Printf("\nrounds size: %d\n", len(cr.rounds))
-				for _, r := range cr.rounds {
-					fmt.Printf("round height: %d, round num: %d, state: %+v\n", r.Height(), r.RoundNum(), r.State())
-				}
-				fmt.Printf("\n")
-				cr.mutex.RUnlock()
-			}
-		}
-	}()
+	// cr.wg.Add(1)
+	// go func() {
+	// 	defer cr.wg.Done()
+	// 	ticker := time.NewTicker(5 * time.Second)
+	// 	defer ticker.Stop()
+	// 	for {
+	// 		select {
+	// 		case <-cr.quit:
+	// 			return
+	// 		case <-ticker.C:
+	// 			cr.mutex.RLock()
+	// 			fmt.Printf("\nrounds size: %d\n", len(cr.rounds))
+	// 			for _, r := range cr.rounds {
+	// 				fmt.Printf("round height: %d, round num: %d, state: %+v\n", r.Height(), r.RoundNum(), r.State())
+	// 			}
+	// 			fmt.Printf("\n")
+	// 			cr.mutex.RUnlock()
+	// 		}
+	// 	}
+	// }()
 	return nil
 }
 

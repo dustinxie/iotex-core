@@ -187,6 +187,8 @@ func (sdb *stateDB) OngoingBlockHeight() uint64 {
 }
 
 func (sdb *stateDB) PendingBlockHeader(height uint64) (*block.Header, error) {
+	sdb.mutex.RLock()
+	defer sdb.mutex.RUnlock()
 	if h := sdb.chamber.GetBlockHeader(height); h != nil {
 		return h, nil
 	}
@@ -194,10 +196,14 @@ func (sdb *stateDB) PendingBlockHeader(height uint64) (*block.Header, error) {
 }
 
 func (sdb *stateDB) PutBlockHeader(header *block.Header) {
+	sdb.mutex.Lock()
+	defer sdb.mutex.Unlock()
 	sdb.chamber.PutBlockHeader(header)
 }
 
 func (sdb *stateDB) CancelBlock(height uint64) []uint64 {
+	sdb.mutex.Lock()
+	defer sdb.mutex.Unlock()
 	return sdb.chamber.AbandonWorkingSets(height)
 }
 
