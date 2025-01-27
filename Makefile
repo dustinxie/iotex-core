@@ -223,6 +223,11 @@ minicluster:
 	$(GOBUILD) -ldflags "$(PackageFlags)" -o ./bin/$(BUILD_TARGET_MINICLUSTER) -v ./tools/minicluster
 	./bin/$(BUILD_TARGET_MINICLUSTER)
 
+.PHONY: re-minicluster
+re-minicluster:
+	$(GOBUILD) -ldflags "$(PackageFlags)" -o ./bin/$(BUILD_TARGET_MINICLUSTER) -v ./tools/minicluster
+	./bin/$(BUILD_TARGET_MINICLUSTER)
+
 .PHONY: nightlybuild
 nightlybuild:
 	$(ECHO_V)rm -rf *chain*.db
