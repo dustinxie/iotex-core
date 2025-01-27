@@ -23,9 +23,10 @@ type (
 		Height() uint64
 		RoundNum() uint32
 		Handle(msg *iotextypes.ConsensusMessage)
-		Result() chan int
+		Result() chan any
 		Calibrate(h uint64)
 		State() fsm.State
+		Invalid()
 	}
 
 	ChainedRollDPoS struct {
@@ -156,6 +157,15 @@ func (cr *ChainedRollDPoS) removeRound(round Round) {
 	}
 }
 
+func (cr *ChainedRollDPoS) getRound(h uint64) Round {
+	for _, r := range cr.rounds {
+		if r.Height() == h {
+			return r
+		}
+	}
+	return nil
+}
+
 func (cr *ChainedRollDPoS) RunRound(ctx context.Context, r Round) {
 	// rolldpos round loop, but ternimate when round status is finalized or invalid
 	err := r.Start(ctx)
@@ -174,20 +184,30 @@ func (cr *ChainedRollDPoS) RunRound(ctx context.Context, r Round) {
 			cr.mutex.Unlock()
 		}()
 
-		var res int
 		select {
-		case res = <-r.Result():
+		case res := <-r.Result():
+			switch inner := res.(type) {
+			case uint64:
+				log.L().Info("round finished", zap.Uint64("height", r.Height()), zap.Uint32("round", r.RoundNum()))
+			case []uint64:
+				cr.mutex.RLock()
+				for _, h := range inner {
+					if h == r.Height() {
+						continue
+					}
+					if rr := cr.getRound(h); rr != nil {
+						log.L().Debug("round abandoned", zap.Uint64("height", h))
+						rr.Invalid()
+					}
+				}
+				cr.mutex.RUnlock()
+				log.L().Info("round invalid", zap.Uint64("height", r.Height()), zap.Uint32("round", r.RoundNum()), zap.Any("drops", inner))
+			default:
+				log.L().Info("round terminated", zap.Any("result", res), zap.Uint64("height", r.Height()), zap.Uint32("round", r.RoundNum()))
+			}
 		case <-ctx.Done():
 			log.L().Info("round canceled", zap.Error(ctx.Err()), zap.Uint64("height", r.Height()), zap.Uint32("round", r.RoundNum()))
 			return
-		}
-		switch res {
-		case 1:
-			log.L().Info("round finished", zap.Uint64("height", r.Height()), zap.Uint32("round", r.RoundNum()))
-		case 0:
-			log.L().Info("round invalid", zap.Uint64("height", r.Height()), zap.Uint32("round", r.RoundNum()))
-		default:
-			log.L().Info("round terminated", zap.Int("result", res), zap.Uint64("height", r.Height()), zap.Uint32("round", r.RoundNum()))
 		}
 	}()
 }
@@ -199,14 +219,14 @@ func (cr *ChainedRollDPoS) newRound() (Round, error) {
 	}
 	return &roundV2{
 		dpos: dpos,
-		res:  make(chan int, 1),
+		res:  make(chan any, 1),
 		quit: make(chan struct{}),
 	}, nil
 }
 
 type roundV2 struct {
 	dpos *RollDPoS
-	res  chan int
+	res  chan any
 	quit chan struct{}
 	wg   sync.WaitGroup
 }
@@ -216,26 +236,39 @@ func (r *roundV2) Start(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// r.wg.Add(1)
+	// go func() {
+	// 	defer r.wg.Done()
+	// 	ticker := time.NewTicker(1 * time.Second)
+	// 	defer ticker.Stop()
+	// 	for {
+	// 		select {
+	// 		case <-r.quit:
+	// 			return
+	// 		case <-ticker.C:
+	// 			state := r.dpos.cfsm.CurrentState()
+	// 			r.dpos.ctx.Logger().Debug("round state check", zap.String("state", string(state)))
+	// 		}
+	// 	}
+	// }()
 	r.wg.Add(1)
 	go func() {
 		defer r.wg.Done()
-		ticker := time.NewTicker(1 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-r.quit:
+		select {
+		case <-r.quit:
+			return
+		case state := <-r.dpos.cfsm.Done():
+			switch state {
+			case consensusfsm.SFinalized:
+				r.res <- uint64(1)
 				return
-			case <-ticker.C:
-				switch r.dpos.cfsm.CurrentState() {
-				case consensusfsm.SFinalized:
-					r.res <- 1
-					return
-				case consensusfsm.SInvalid:
-					r.dpos.ctx.Chain().DropDraftBlock(r.Height())
-					r.res <- 0
-					return
-				default:
-				}
+			case consensusfsm.SInvalid:
+				drops := r.dpos.ctx.Chain().DropDraftBlock(r.Height())
+				r.dpos.ctx.Logger().Debug("drops", zap.Uint64("height", r.Height()), zap.Any("drops", drops))
+				r.res <- drops
+				return
+			default:
+				r.dpos.ctx.Logger().Error("round terminated with unknown state", zap.String("state", string(state)))
 			}
 		}
 	}()
@@ -263,7 +296,7 @@ func (r *roundV2) Handle(msg *iotextypes.ConsensusMessage) {
 	}
 }
 
-func (r *roundV2) Result() chan int {
+func (r *roundV2) Result() chan any {
 	return r.res
 }
 
@@ -273,4 +306,8 @@ func (r *roundV2) Calibrate(h uint64) {
 
 func (r *roundV2) State() fsm.State {
 	return r.dpos.cfsm.CurrentState()
+}
+
+func (r *roundV2) Invalid() {
+	r.dpos.cfsm.ProduceInvalidEvent()
 }

@@ -601,3 +601,10 @@ func (m *ConsensusFSM) handleBackdoorEvt(evt fsm.Event) (fsm.State, error) {
 
 	return dst, nil
 }
+
+func (m *ConsensusFSM) ProduceInvalidEvent() {
+}
+
+func (m *ConsensusFSM) Done() <-chan fsm.State {
+	return nil
+}

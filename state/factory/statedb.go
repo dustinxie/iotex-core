@@ -197,8 +197,8 @@ func (sdb *stateDB) PutBlockHeader(header *block.Header) {
 	sdb.chamber.PutBlockHeader(header)
 }
 
-func (sdb *stateDB) CancelBlock(height uint64) {
-	sdb.chamber.AbandonWorkingSets(height)
+func (sdb *stateDB) CancelBlock(height uint64) []uint64 {
+	return sdb.chamber.AbandonWorkingSets(height)
 }
 
 func (sdb *stateDB) newWorkingSet(ctx context.Context, height uint64) (*workingSet, error) {

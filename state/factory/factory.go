@@ -90,7 +90,7 @@ type (
 		OngoingBlockHeight() uint64
 		PendingBlockHeader(uint64) (*block.Header, error)
 		PutBlockHeader(*block.Header)
-		CancelBlock(uint64)
+		CancelBlock(uint64) []uint64
 	}
 
 	// factory implements StateFactory interface, tracks changes to account/contract and batch-commits to DB
@@ -269,8 +269,8 @@ func (sf *factory) PutBlockHeader(header *block.Header) {
 	sf.chamber.PutBlockHeader(header)
 }
 
-func (sf *factory) CancelBlock(height uint64) {
-	sf.chamber.AbandonWorkingSets(height)
+func (sf *factory) CancelBlock(height uint64) []uint64 {
+	return sf.chamber.AbandonWorkingSets(height)
 }
 
 func (sf *factory) newWorkingSet(ctx context.Context, height uint64) (*workingSet, error) {

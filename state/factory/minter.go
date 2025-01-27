@@ -62,6 +62,6 @@ func (m *minter) PutBlockHeader(header *block.Header) {
 	m.f.PutBlockHeader(header)
 }
 
-func (m *minter) CancelBlock(height uint64) {
-	m.f.CancelBlock(height)
+func (m *minter) CancelBlock(height uint64) []uint64 {
+	return m.f.CancelBlock(height)
 }

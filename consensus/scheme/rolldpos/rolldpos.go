@@ -64,13 +64,13 @@ type (
 		ChainAddress() string
 		// DraftHeight returns draft height
 		DraftHeight() uint64
-		DropDraftBlock(uint64)
+		DropDraftBlock(uint64) []uint64
 	}
 
 	workingSet interface {
 		OngoingBlockHeight() uint64
 		PendingBlockHeader(uint64) (*block.Header, error)
-		CancelBlock(uint64)
+		CancelBlock(uint64) []uint64
 		// OngoingBlockHeight() uint64
 		// PendingBlockHeader(uint64) (*block.Header, error)
 	}
@@ -91,6 +91,8 @@ type (
 		Calibrate(uint64)
 		NumPendingEvents() int
 		CurrentState() fsm.State
+		Done() <-chan fsm.State
+		ProduceInvalidEvent()
 	}
 )
 
@@ -201,10 +203,11 @@ func (cm *chainManager) DraftHeight() uint64 {
 	return tip
 }
 
-func (cm *chainManager) DropDraftBlock(height uint64) {
+func (cm *chainManager) DropDraftBlock(height uint64) []uint64 {
 	if cm.ws != nil {
-		cm.ws.CancelBlock(height)
+		return cm.ws.CancelBlock(height)
 	}
+	return nil
 }
 
 // RollDPoS is Roll-DPoS consensus main entrance

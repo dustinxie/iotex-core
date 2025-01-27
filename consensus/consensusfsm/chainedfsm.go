@@ -15,10 +15,13 @@ const (
 	// consensus states
 	SFinalized fsm.State = "S_FINALIZED"
 	SInvalid   fsm.State = "S_INVALID"
+
+	eInvalid fsm.EventType = "E_INVALID"
 )
 
 type ChainedConsensusFSM struct {
 	*ConsensusFSM
+	done chan fsm.State
 }
 
 func NewChainedConsensusFSM(ctx Context, clock clock.Clock) (*ChainedConsensusFSM, error) {
@@ -30,6 +33,7 @@ func NewChainedConsensusFSM(ctx Context, clock clock.Clock) (*ChainedConsensusFS
 	}
 	cm := &ChainedConsensusFSM{
 		ConsensusFSM: mm,
+		done:         make(chan fsm.State, 1),
 	}
 	b := fsm.NewBuilder().
 		AddInitialState(sPrepare).
@@ -145,6 +149,10 @@ func NewChainedConsensusFSM(ctx Context, clock clock.Clock) (*ChainedConsensusFS
 			b = b.AddTransition(state, eCalibrate, cm.calibrate, []fsm.State{sPrepare, state})
 		}
 	}
+	// Add invalid state transition to every state
+	for _, state := range consensusStates {
+		b = b.AddTransition(state, eInvalid, cm.onInvalid, []fsm.State{SInvalid})
+	}
 	m, err := b.Build()
 	if err != nil {
 		return nil, errors.Wrap(err, "error when building the FSM")
@@ -234,15 +242,29 @@ func (m *ChainedConsensusFSM) onReceivePreCommitEndorsement(evt fsm.Event) (fsm.
 	if err != nil || !committed {
 		return sAcceptPreCommitEndorsement, err
 	}
-	return SFinalized, nil
+	return m.Finalize()
 }
 
 func (m *ChainedConsensusFSM) Finalize() (fsm.State, error) {
-	m.ctx.Logger().Warn("Finalized")
+	m.ctx.Logger().Info("Finalized")
+	go func() { m.done <- SFinalized }()
 	return SFinalized, nil
 }
 
 func (m *ChainedConsensusFSM) Invalid() (fsm.State, error) {
 	m.ctx.Logger().Warn("Invalid")
+	go func() { m.done <- SInvalid }()
 	return SInvalid, nil
+}
+
+func (m *ChainedConsensusFSM) onInvalid(evt fsm.Event) (fsm.State, error) {
+	return m.Invalid()
+}
+
+func (m *ChainedConsensusFSM) ProduceInvalidEvent() {
+	m.produceConsensusEvent(eInvalid, 0)
+}
+
+func (m *ChainedConsensusFSM) Done() <-chan fsm.State {
+	return m.done
 }

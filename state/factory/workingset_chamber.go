@@ -8,15 +8,17 @@ package factory
 import (
 	"github.com/iotexproject/go-pkgs/cache"
 	"github.com/iotexproject/go-pkgs/hash"
+	"go.uber.org/zap"
 
 	"github.com/iotexproject/iotex-core/v2/blockchain/block"
+	"github.com/iotexproject/iotex-core/v2/pkg/log"
 )
 
 type (
 	WorkingSetChamber interface {
 		GetWorkingSet(any) *workingSet
 		PutWorkingSet(hash.Hash256, *workingSet)
-		AbandonWorkingSets(uint64)
+		AbandonWorkingSets(uint64) []uint64
 		OngoingBlockHeight() uint64
 		GetBlockHeader(uint64) *block.Header
 		PutBlockHeader(*block.Header)
@@ -52,14 +54,18 @@ func (cmb *chamber) PutWorkingSet(key hash.Hash256, ws *workingSet) {
 	}
 }
 
-func (cmb *chamber) AbandonWorkingSets(h uint64) {
+func (cmb *chamber) AbandonWorkingSets(h uint64) []uint64 {
+	var abandoned []uint64
 	for ; ; h++ {
 		if ws := cmb.GetWorkingSet(h); ws != nil {
+			log.L().Debug("Abandon working set", zap.Uint64("height", h))
+			abandoned = append(abandoned, h)
 			cmb.ws.Remove(h)
 		} else {
 			break
 		}
 	}
+	return abandoned
 }
 
 func (cmb *chamber) OngoingBlockHeight() uint64 {
