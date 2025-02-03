@@ -193,7 +193,7 @@ func (sdb *stateDB) newWorkingSet(ctx context.Context, height uint64) (*workingS
 			flusher.KVStoreWithBuffer().MustPut(p.Namespace, p.Key, p.Value)
 		}
 	}
-	store := newStateDBWorkingSetStore(sdb.protocolView, flusher, g.IsNewfoundland(height))
+	store := newStateDBWorkingSetStore(sdb.protocolView, flusher)
 	if err := store.Start(ctx); err != nil {
 		return nil, err
 	}

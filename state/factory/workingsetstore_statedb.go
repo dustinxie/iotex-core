@@ -18,16 +18,14 @@ import (
 
 type stateDBWorkingSetStore struct {
 	*workingSetStoreCommon
-	readBuffer bool
 }
 
-func newStateDBWorkingSetStore(view protocol.View, flusher db.KVStoreFlusher, readBuffer bool) workingSetStore {
+func newStateDBWorkingSetStore(view protocol.View, flusher db.KVStoreFlusher) workingSetStore {
 	return &stateDBWorkingSetStore{
 		workingSetStoreCommon: &workingSetStoreCommon{
 			flusher: flusher,
 			view:    view,
 		},
-		readBuffer: readBuffer,
 	}
 }
 
@@ -51,11 +49,7 @@ func (store *stateDBWorkingSetStore) Get(ns string, key []byte) ([]byte, error) 
 }
 
 func (store *stateDBWorkingSetStore) States(ns string, keys [][]byte) ([][]byte, [][]byte, error) {
-	if store.readBuffer {
-		// TODO: after the 180 HF, we can revert readBuffer, and always go this case
-		return readStates(store.flusher.KVStoreWithBuffer(), ns, keys)
-	}
-	return readStates(store.flusher.BaseKVStore(), ns, keys)
+	return readStates(store.flusher.KVStoreWithBuffer(), ns, keys)
 }
 
 func (store *stateDBWorkingSetStore) Finalize(height uint64) error {
