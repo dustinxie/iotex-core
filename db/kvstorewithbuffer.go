@@ -24,7 +24,7 @@ type (
 	// and transaction with multiple writes
 	KVStoreWithBuffer interface {
 		KVStore
-		GetDirty(string, []byte) ([]byte, bool)
+		GetDirty(string, []byte) ([]byte, error)
 		withBuffer
 	}
 
@@ -168,20 +168,18 @@ func (kvb *kvStoreWithBuffer) Size() int {
 
 func (kvb *kvStoreWithBuffer) Get(ns string, key []byte) ([]byte, error) {
 	value, err := kvb.buffer.Get(ns, key)
-	if errors.Cause(err) == batch.ErrNotExist {
-		value, err = kvb.store.Get(ns, key)
-	}
 	if errors.Cause(err) == batch.ErrAlreadyDeleted {
-		err = errors.Wrapf(ErrNotExist, "failed to get key %x in %s, deleted in buffer level", key, ns)
+		// the current code will never hit this if, since the error is shadowed by kvb.store.Get(ns, key)
+		return value, errors.Wrapf(ErrNotExist, "failed to get key %x in %s, deleted in buffer level", key, ns)
+	}
+	if errors.Cause(err) == batch.ErrNotExist {
+		return kvb.store.Get(ns, key)
 	}
 	return value, err
 }
 
-func (kvb *kvStoreWithBuffer) GetDirty(ns string, key []byte) ([]byte, bool) {
-	if value, err := kvb.buffer.Get(ns, key); err == nil {
-		return value, true
-	}
-	return nil, false
+func (kvb *kvStoreWithBuffer) GetDirty(ns string, key []byte) ([]byte, error) {
+	return kvb.buffer.Get(ns, key)
 }
 
 func (kvb *kvStoreWithBuffer) Put(ns string, key, value []byte) error {

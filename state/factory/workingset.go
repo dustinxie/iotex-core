@@ -31,6 +31,8 @@ import (
 	"github.com/iotexproject/iotex-core/v2/actpool/actioniterator"
 	"github.com/iotexproject/iotex-core/v2/blockchain/block"
 	"github.com/iotexproject/iotex-core/v2/blockchain/genesis"
+	"github.com/iotexproject/iotex-core/v2/db"
+	"github.com/iotexproject/iotex-core/v2/db/batch"
 	"github.com/iotexproject/iotex-core/v2/pkg/log"
 	"github.com/iotexproject/iotex-core/v2/state"
 )
@@ -318,10 +320,6 @@ func (ws *workingSet) freshAccountConversion(ctx context.Context, actCtx *protoc
 	return nil
 }
 
-func (ws *workingSet) getDirty(ns string, key []byte) ([]byte, bool) {
-	return ws.store.GetDirty(ns, key)
-}
-
 // Commit persists all changes in RunActions() into the DB
 func (ws *workingSet) Commit(ctx context.Context) error {
 	if err := ws.verifyParent(); err != nil {
@@ -352,12 +350,14 @@ func (ws *workingSet) State(s interface{}, opts ...protocol.StateOption) (uint64
 		return 0, errors.Wrap(ErrNotSupported, "Read state with keys option has not been implemented yet")
 	}
 	if ws.parent != nil {
-		if value, dirty := ws.getDirty(cfg.Namespace, cfg.Key); dirty {
+		value, err := ws.store.GetDirty(cfg.Namespace, cfg.Key)
+		if err == nil {
 			return ws.height, state.Deserialize(s, value)
 		}
-		if value, dirty := ws.parent.getDirty(cfg.Namespace, cfg.Key); dirty {
-			return ws.height, state.Deserialize(s, value)
+		if errors.Cause(err) == batch.ErrAlreadyDeleted {
+			return 0, errors.Wrapf(db.ErrNotExist, "failed to get key %x in %s, deleted in buffer level", cfg.Key, cfg.Namespace)
 		}
+		return ws.parent.State(s, opts...)
 	}
 	value, err := ws.store.Get(cfg.Namespace, cfg.Key)
 	if err != nil {

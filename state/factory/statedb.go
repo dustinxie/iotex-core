@@ -232,6 +232,10 @@ func (sdb *stateDB) newWorkingSet(ctx context.Context, height uint64) (*workingS
 	if height > 0 {
 		parent = sdb.chamber.GetWorkingSet(height - 1)
 	}
+	// TODO: need mutex to access finalized
+	if parent != nil && !parent.finalized {
+		return nil, errors.New("parent workingset not finalized")
+	}
 	return newWorkingSet(height, store, parent), nil
 }
 
