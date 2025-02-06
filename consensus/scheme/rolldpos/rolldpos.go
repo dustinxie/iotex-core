@@ -76,8 +76,9 @@ type (
 	}
 
 	chainManager struct {
-		bc blockchain.Blockchain
-		ws workingSet
+		bc        blockchain.Blockchain
+		ws        workingSet
+		consensus consensusfsm.ConsensusConfig
 	}
 
 	consensusFsm interface {
@@ -119,10 +120,11 @@ func NewChainManager(bc blockchain.Blockchain) ChainManager {
 	}
 }
 
-func NewChainManager2(bc blockchain.Blockchain, ws workingSet) ChainManager {
+func NewChainManager2(bc blockchain.Blockchain, ws workingSet, cfg BuilderConfig) ChainManager {
 	return &chainManager{
-		bc: bc,
-		ws: ws,
+		bc:        bc,
+		ws:        ws,
+		consensus: consensusfsm.NewConsensusConfig(cfg.Consensus.FSM, cfg.DardanellesUpgrade, cfg.Genesis, cfg.Consensus.Delay),
 	}
 }
 
@@ -131,12 +133,37 @@ func (cm *chainManager) BlockProposeTime(height uint64) (time.Time, error) {
 	if height == 0 {
 		return time.Unix(cm.bc.Genesis().Timestamp, 0), nil
 	}
-	if cm.ws != nil && height > cm.bc.TipHeight() {
-		log.L().Debug("Get propose time from working set", zap.Uint64("height", height))
-		blk, err := cm.ws.PendingBlockHeader(height)
-		if err == nil {
-			return blk.Timestamp(), nil
+
+	if cm.ws != nil && height > cm.bc.TipHeight() && cm.ws.OngoingBlockHeight() > cm.bc.TipHeight() {
+		if height > cm.ws.OngoingBlockHeight() {
+			// predict propose time
+			header, err := cm.ws.PendingBlockHeader(cm.ws.OngoingBlockHeight())
+			if err != nil {
+				return time.Time{}, errors.Wrapf(
+					err, "error when getting the block at height: %d",
+					cm.ws.OngoingBlockHeight(),
+				)
+			}
+			du := time.Duration(height-header.Height()) * cm.consensus.BlockInterval(header.Height())
+			return header.Timestamp().Add(du), nil
+		} else if height > cm.bc.TipHeight() {
+			log.L().Debug("Get propose time from working set", zap.Uint64("height", height))
+			blk, err := cm.ws.PendingBlockHeader(height)
+			if err == nil {
+				return blk.Timestamp(), nil
+			}
 		}
+	}
+	if height > cm.bc.TipHeight() {
+		header, err := cm.bc.BlockHeaderByHeight(cm.bc.TipHeight())
+		if err != nil {
+			return time.Time{}, errors.Wrapf(
+				err, "error when getting the block at height: %d",
+				cm.bc.TipHeight(),
+			)
+		}
+		du := time.Duration(height-cm.bc.TipHeight()) * cm.consensus.BlockInterval(cm.bc.TipHeight())
+		return header.Timestamp().Add(du), nil
 	}
 	header, err := cm.bc.BlockHeaderByHeight(height)
 	if err != nil {

@@ -137,7 +137,7 @@ func NewConsensus(
 			SetAddr(cfg.Chain.ProducerAddress().String()).
 			SetPriKey(cfg.Chain.ProducerPrivateKey()).
 			SetConfig(cfg).
-			SetChainManager(rolldpos.NewChainManager2(bc, sf)).
+			SetChainManager(rolldpos.NewChainManager2(bc, sf, cfg)).
 			SetBlockDeserializer(block.NewDeserializer(bc.EvmNetworkID())).
 			SetClock(clock).
 			SetBroadcast(ops.broadcastHandler).
