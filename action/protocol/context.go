@@ -33,6 +33,12 @@ type (
 
 	vmConfigContextKey struct{}
 
+	roundCtxKey struct{}
+	RoundCtxVal struct {
+		Height   uint64
+		RoundNum uint32
+	}
+
 	// TipInfo contains the tip block information
 	TipInfo struct {
 		Height        uint64
@@ -387,4 +393,13 @@ func WithVMConfigCtx(ctx context.Context, vmConfig vm.Config) context.Context {
 func GetVMConfigCtx(ctx context.Context) (vm.Config, bool) {
 	cfg, ok := ctx.Value(vmConfigContextKey{}).(vm.Config)
 	return cfg, ok
+}
+
+func WithRoundNumCtx(ctx context.Context, height uint64, num uint32) context.Context {
+	return context.WithValue(ctx, roundCtxKey{}, &RoundCtxVal{RoundNum: num, Height: height})
+}
+
+func GetRoundNumCtx(ctx context.Context) (RoundCtxVal, bool) {
+	r, ok := ctx.Value(roundCtxKey{}).(RoundCtxVal)
+	return r, ok
 }

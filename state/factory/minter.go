@@ -9,11 +9,14 @@ import (
 	"context"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/iotexproject/iotex-core/v2/action"
 	"github.com/iotexproject/iotex-core/v2/action/protocol"
 	"github.com/iotexproject/iotex-core/v2/actpool"
 	"github.com/iotexproject/iotex-core/v2/blockchain"
 	"github.com/iotexproject/iotex-core/v2/blockchain/block"
+	"github.com/iotexproject/iotex-core/v2/pkg/log"
 )
 
 type MintOption func(*minter)
@@ -43,8 +46,20 @@ func NewMinter(f Factory, ap actpool.ActPool, opts ...MintOption) blockchain.Blo
 // NewBlockBuilder implements the BlockMinter interface
 func (m *minter) NewBlockBuilder(ctx context.Context, sign func(action.Envelope) (*action.SealedEnvelope, error)) (*block.Builder, error) {
 	if m.timeout > 0 {
+		timeout := m.timeout
+		round, ok := protocol.GetRoundNumCtx(ctx)
+		if ok {
+			// smaller timeout for greater round number
+			// if number is 0, timeout is the same as the original
+			// timeout at least be 0.1 * original timeout
+			timeout = time.Duration(int64(timeout) * (1 - int64(round.RoundNum)/10))
+			if timeout < m.timeout/10 {
+				timeout = m.timeout / 10
+			}
+		}
+		log.L().Info("NewBlockBuilder with timeout", zap.Duration("timeout", timeout), zap.Uint32("round", round.RoundNum), zap.Uint64("height", round.Height))
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithDeadline(ctx, protocol.MustGetBlockCtx(ctx).BlockTimeStamp.Add(m.timeout))
+		ctx, cancel = context.WithDeadline(ctx, protocol.MustGetBlockCtx(ctx).BlockTimeStamp.Add(timeout))
 		defer cancel()
 	}
 	return m.f.NewBlockBuilder(ctx, m.ap, sign)

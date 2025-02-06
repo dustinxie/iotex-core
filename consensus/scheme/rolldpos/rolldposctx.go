@@ -17,6 +17,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 
+	"github.com/iotexproject/iotex-core/v2/action/protocol"
 	"github.com/iotexproject/iotex-core/v2/action/protocol/rolldpos"
 	"github.com/iotexproject/iotex-core/v2/blockchain"
 	"github.com/iotexproject/iotex-core/v2/blockchain/block"
@@ -636,7 +637,7 @@ func (ctx *rollDPoSCtx) mintNewBlock() (*EndorsedConsensusMessage, error) {
 	blk := ctx.round.CachedMintedBlock()
 	if blk == nil {
 		// in case that there is no cached block in eManagerDB, it mints a new block.
-		blk, err = ctx.chain.MintNewBlock(ctx.round.StartTime())
+		blk, err = ctx.chain.MintNewBlock(protocol.WithRoundNumCtx(context.Background(), ctx.round.Height(), ctx.round.Number()), ctx.round.StartTime())
 		if err != nil {
 			return nil, err
 		}

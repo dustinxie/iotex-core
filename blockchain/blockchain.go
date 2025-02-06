@@ -413,13 +413,17 @@ func (bc *blockchain) context(ctx context.Context, height uint64) (context.Conte
 }
 
 func (bc *blockchain) MintNewBlock(timestamp time.Time) (*block.Block, error) {
+	return bc.MintNewBlockWithCtx(context.Background(), timestamp)
+}
+
+func (bc *blockchain) MintNewBlockWithCtx(ctx context.Context, timestamp time.Time) (*block.Block, error) {
 	bc.mu.RLock()
 	defer bc.mu.RUnlock()
 	mintNewBlockTimer := bc.timerFactory.NewTimer("MintNewBlock")
 	defer mintNewBlockTimer.End()
 	tipHeight := bc.bbf.OngoingBlockHeight()
 	newblockHeight := tipHeight + 1
-	ctx, err := bc.context(context.Background(), tipHeight)
+	ctx, err := bc.context(ctx, tipHeight)
 	if err != nil {
 		return nil, err
 	}
