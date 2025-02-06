@@ -172,7 +172,7 @@ func (m *ChainedConsensusFSM) prepare(evt fsm.Event) (fsm.State, error) {
 	proposal, err := m.ctx.Proposal()
 	if err != nil {
 		m.ctx.Logger().Error("failed to generate block proposal", zap.Error(err))
-		return m.BackToPrepare(100 * time.Millisecond)
+		return m.Invalid()
 	}
 
 	overtime := m.ctx.WaitUntilRoundStart()
