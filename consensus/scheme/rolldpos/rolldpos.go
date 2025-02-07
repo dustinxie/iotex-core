@@ -439,6 +439,7 @@ type (
 		rp                   *rolldpos.Protocol
 		delegatesByEpochFunc NodesSelectionByEpochFunc
 		proposersByEpochFunc NodesSelectionByEpochFunc
+		roundTagger          TagCurrentRoundFunc
 	}
 )
 
@@ -505,6 +506,13 @@ func (b *Builder) SetProposersByEpochFunc(
 	return b
 }
 
+func (b *Builder) SetRoundTaggerFunc(
+	roundTagger TagCurrentRoundFunc,
+) *Builder {
+	b.roundTagger = roundTagger
+	return b
+}
+
 // RegisterProtocol sets the rolldpos protocol
 func (b *Builder) RegisterProtocol(rp *rolldpos.Protocol) *Builder {
 	b.rp = rp
@@ -535,6 +543,8 @@ func (b *Builder) Build() (*RollDPoS, error) {
 		b.broadcastHandler,
 		b.delegatesByEpochFunc,
 		b.proposersByEpochFunc,
+		calculateProposer,
+		b.roundTagger,
 		b.encodedAddr,
 		b.priKey,
 		b.clock,
@@ -580,6 +590,8 @@ func (b *Builder) BuildV2() (*RollDPoS, error) {
 		b.broadcastHandler,
 		b.delegatesByEpochFunc,
 		b.proposersByEpochFunc,
+		chainedCalculateProposer,
+		b.roundTagger,
 		b.encodedAddr,
 		b.priKey,
 		b.clock,

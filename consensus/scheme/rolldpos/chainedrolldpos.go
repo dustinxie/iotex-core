@@ -30,22 +30,24 @@ type (
 	}
 
 	ChainedRollDPoS struct {
-		rounds  []Round
-		quit    chan struct{}
-		builder *Builder
-		wg      sync.WaitGroup
-		active  bool
-		mutex   sync.RWMutex
+		rounds     []Round
+		quit       chan struct{}
+		builder    *Builder
+		wg         sync.WaitGroup
+		active     bool
+		mutex      sync.RWMutex
+		finalRound uint32
 	}
 )
 
 func NewChainedRollDPoS(builder *Builder) *ChainedRollDPoS {
-	return &ChainedRollDPoS{
-		rounds:  make([]Round, 0),
-		quit:    make(chan struct{}),
-		builder: builder,
-		active:  true,
+	c := ChainedRollDPoS{
+		rounds: make([]Round, 0),
+		quit:   make(chan struct{}),
+		active: true,
 	}
+	c.builder = builder.SetRoundTaggerFunc(c.GetFinalRound)
+	return &c
 }
 
 func (cr *ChainedRollDPoS) Start(ctx context.Context) error {
@@ -193,6 +195,7 @@ func (cr *ChainedRollDPoS) RunRound(ctx context.Context, r Round) {
 			switch inner := res.(type) {
 			case uint64:
 				log.L().Info("round finished", zap.Uint64("height", r.Height()), zap.Uint32("round", r.RoundNum()))
+				cr.UpdateFinalRound(r.RoundNum())
 			case []uint64:
 				cr.mutex.RLock()
 				for _, h := range inner {
@@ -205,6 +208,7 @@ func (cr *ChainedRollDPoS) RunRound(ctx context.Context, r Round) {
 					}
 				}
 				cr.mutex.RUnlock()
+				cr.UpdateFinalRound(r.RoundNum())
 				log.L().Info("round invalid", zap.Uint64("height", r.Height()), zap.Uint32("round", r.RoundNum()), zap.Any("drops", inner))
 			default:
 				log.L().Info("round terminated", zap.Any("result", res), zap.Uint64("height", r.Height()), zap.Uint32("round", r.RoundNum()))
@@ -214,6 +218,20 @@ func (cr *ChainedRollDPoS) RunRound(ctx context.Context, r Round) {
 			return
 		}
 	}()
+}
+
+func (cr *ChainedRollDPoS) UpdateFinalRound(r uint32) {
+	cr.mutex.Lock()
+	if r > cr.finalRound {
+		cr.finalRound = r
+	}
+	cr.mutex.Unlock()
+}
+
+func (cr *ChainedRollDPoS) GetFinalRound() uint32 {
+	cr.mutex.RLock()
+	defer cr.mutex.RUnlock()
+	return cr.finalRound
 }
 
 func (cr *ChainedRollDPoS) newRound() (Round, error) {

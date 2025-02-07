@@ -73,6 +73,12 @@ type (
 	// NodesSelectionByEpochFunc defines a function to select nodes
 	NodesSelectionByEpochFunc func(uint64) ([]string, error)
 
+	// CalculateProposerByHeightRoundFunc defines a function to calculate proposer
+	CalculateProposerByHeightRoundFunc func(*rolldpos.Protocol, bool, uint64, uint32, []string) (proposer string, err error)
+
+	// TagCurrentRoundFunc tags the current round number
+	TagCurrentRoundFunc func() uint32
+
 	// RDPoSCtx is the context of RollDPoS
 	RDPoSCtx interface {
 		consensusfsm.Context
@@ -117,6 +123,8 @@ func NewRollDPoSCtx(
 	broadcastHandler scheme.Broadcast,
 	delegatesByEpochFunc NodesSelectionByEpochFunc,
 	proposersByEpochFunc NodesSelectionByEpochFunc,
+	calculateProposer CalculateProposerByHeightRoundFunc,
+	roundTagger TagCurrentRoundFunc,
 	encodedAddr string,
 	priKey crypto.PrivateKey,
 	clock clock.Clock,
@@ -154,6 +162,8 @@ func NewRollDPoSCtx(
 	roundCalc := &roundCalculator{
 		delegatesByEpochFunc: delegatesByEpochFunc,
 		proposersByEpochFunc: proposersByEpochFunc,
+		calculateProposer:    calculateProposer,
+		roundTagger:          roundTagger,
 		chain:                chain,
 		rp:                   rp,
 		timeBasedRotation:    timeBasedRotation,

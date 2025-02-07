@@ -24,6 +24,8 @@ type roundCalculator struct {
 	rp                   *rolldpos.Protocol
 	delegatesByEpochFunc NodesSelectionByEpochFunc
 	proposersByEpochFunc NodesSelectionByEpochFunc
+	calculateProposer    CalculateProposerByHeightRoundFunc
+	roundTagger          TagCurrentRoundFunc
 	beringHeight         uint64
 }
 
@@ -58,7 +60,7 @@ func (c *roundCalculator) UpdateRound(round *roundCtx, height uint64, blockInter
 	if err != nil {
 		return nil, err
 	}
-	proposer, err := c.calculateProposer(height, roundNum, proposers)
+	proposer, err := c.calculateProposer(c.rp, c.timeBasedRotation, height, roundNum, proposers)
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +182,9 @@ func (c *roundCalculator) roundInfo(
 	}
 	log.L().Debug("round info", zap.Time("lastBlockTime", lastBlockTime), zap.Time("now", now), zap.Uint64("height", height), zap.Duration("duration", duration), zap.Uint32("roundNum", roundNum))
 	roundStartTime = lastBlockTime.Add(time.Duration(roundNum)*blockProcessDuration + blockInterval)
-
+	if height > 1 && c.roundTagger != nil {
+		roundNum += c.roundTagger()
+	}
 	return roundNum, roundStartTime, nil
 }
 
@@ -242,7 +246,7 @@ func (c *roundCalculator) newRound(
 		if roundNum, roundStartTime, err = c.roundInfo(height, blockInterval, now, toleratedOvertime); err != nil {
 			return
 		}
-		if proposer, err = c.calculateProposer(height, roundNum, proposers); err != nil {
+		if proposer, err = c.calculateProposer(c.rp, c.timeBasedRotation, height, roundNum, proposers); err != nil {
 			return
 		}
 	}
@@ -273,21 +277,44 @@ func (c *roundCalculator) newRound(
 }
 
 // calculateProposer calulates proposer according to height and round number
-func (c *roundCalculator) calculateProposer(
+func calculateProposer(
+	rp *rolldpos.Protocol,
+	timeBasedRotation bool,
 	height uint64,
 	round uint32,
 	proposers []string,
 ) (proposer string, err error) {
 	// TODO use number of proposers
-	numProposers := c.rp.NumDelegates()
+	numProposers := rp.NumDelegates()
 	if numProposers != uint64(len(proposers)) {
 		err = errors.New("invalid proposer list")
 		return
 	}
 	idx := height
-	if c.timeBasedRotation {
+	if timeBasedRotation {
 		idx += uint64(round)
 	}
 	proposer = proposers[idx%numProposers]
+	return
+}
+
+func chainedCalculateProposer(
+	rp *rolldpos.Protocol,
+	timeBasedRotation bool,
+	height uint64,
+	round uint32,
+	proposers []string,
+) (proposer string, err error) {
+	// TODO use number of proposers
+	numProposers := rp.NumDelegates()
+	if numProposers != uint64(len(proposers)) {
+		err = errors.New("invalid proposer list")
+		return
+	}
+	height /= 12
+	if timeBasedRotation {
+		height += uint64(round)
+	}
+	proposer = proposers[height%numProposers]
 	return
 }
