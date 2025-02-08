@@ -357,7 +357,8 @@ func (ws *workingSet) State(s interface{}, opts ...protocol.StateOption) (uint64
 		if errors.Cause(err) == batch.ErrAlreadyDeleted {
 			return 0, errors.Wrapf(db.ErrNotExist, "failed to get key %x in %s, deleted in buffer level", cfg.Key, cfg.Namespace)
 		}
-		return ws.parent.State(s, opts...)
+		_, err = ws.parent.State(s, opts...)
+		return ws.height, err
 	}
 	value, err := ws.store.Get(cfg.Namespace, cfg.Key)
 	if err != nil {
