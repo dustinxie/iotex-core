@@ -26,6 +26,7 @@ type (
 		Calibrate(h uint64)
 		State() fsm.State
 		Invalid()
+		Print()
 	}
 
 	ChainedRollDPoS struct {
@@ -62,6 +63,12 @@ func (cr *ChainedRollDPoS) Start(ctx context.Context) error {
 				func() {
 					cr.mutex.Lock()
 					defer cr.mutex.Unlock()
+					for _, r := range cr.rounds {
+						if r.State() == consensusfsm.SPrepare {
+							log.L().Info("round prepare not finished", zap.Uint64("height", r.Height()), zap.Uint32("round", r.RoundNum()))
+							return
+						}
+					}
 					if len(cr.rounds) < 5 {
 						// log.L().Debug("create round")
 						// defer log.L().Debug("new round finished")
@@ -89,7 +96,7 @@ func (cr *ChainedRollDPoS) Start(ctx context.Context) error {
 	// cr.wg.Add(1)
 	// go func() {
 	// 	defer cr.wg.Done()
-	// 	ticker := time.NewTicker(5 * time.Second)
+	// 	ticker := time.NewTicker(1 * time.Second)
 	// 	defer ticker.Stop()
 	// 	for {
 	// 		select {
@@ -97,11 +104,9 @@ func (cr *ChainedRollDPoS) Start(ctx context.Context) error {
 	// 			return
 	// 		case <-ticker.C:
 	// 			cr.mutex.RLock()
-	// 			fmt.Printf("\nrounds size: %d\n", len(cr.rounds))
 	// 			for _, r := range cr.rounds {
-	// 				fmt.Printf("round height: %d, round num: %d, state: %+v\n", r.Height(), r.RoundNum(), r.State())
+	// 				r.Print()
 	// 			}
-	// 			fmt.Printf("\n")
 	// 			cr.mutex.RUnlock()
 	// 		}
 	// 	}
@@ -309,4 +314,8 @@ func (r *roundV2) State() fsm.State {
 
 func (r *roundV2) Invalid() {
 	r.dpos.cfsm.ProduceInvalidEvent()
+}
+
+func (r *roundV2) Print() {
+	r.dpos.ctx.Logger().Info("consensus view", zap.String("state", string(r.State())))
 }

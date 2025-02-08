@@ -13,6 +13,7 @@ import (
 
 const (
 	// consensus states
+	SPrepare   fsm.State = sPrepare
 	SFinalized fsm.State = "S_FINALIZED"
 	SInvalid   fsm.State = "S_INVALID"
 
