@@ -255,6 +255,7 @@ func (sdb *stateDB) Validate(ctx context.Context, blk *block.Block) error {
 			return errors.Wrap(err, "failed to validate block with workingset in statedb")
 		}
 		sdb.chamber.PutWorkingSet(key, ws)
+		sdb.chamber.PutBlockHeader(&blk.Header)
 	}
 	receipts, err := ws.Receipts()
 	if err != nil {
