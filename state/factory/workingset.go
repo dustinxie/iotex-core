@@ -421,6 +421,14 @@ func (ws *workingSet) WriteView(name string, v interface{}) error {
 	return ws.store.WriteView(name, v)
 }
 
+func (ws *workingSet) ReadDeposit(name string) (interface{}, error) {
+	return ws.store.ReadDeposit(name)
+}
+
+func (ws *workingSet) WriteDeposit(name string, v interface{}) error {
+	return ws.store.WriteDeposit(name, v)
+}
+
 func (ws *workingSet) ProtocolDirty(name string) bool {
 	return ws.dock.ProtocolDirty(name)
 }

@@ -224,17 +224,28 @@ func (sdb *stateDB) newWorkingSet(ctx context.Context, height uint64) (*workingS
 			flusher.KVStoreWithBuffer().MustPut(p.Namespace, p.Key, p.Value)
 		}
 	}
-	store := newStateDBWorkingSetStore(sdb.protocolView, flusher, g.IsNewfoundland(height))
-	if err := store.Start(ctx); err != nil {
-		return nil, err
-	}
-	var parent *workingSet
+	var (
+		parent *workingSet
+		store  workingSetStore
+	)
 	if height > 0 {
 		parent = sdb.chamber.GetWorkingSet(height - 1)
 	}
-	// TODO: need mutex to access finalized
-	if parent != nil && !parent.finalized {
-		return nil, errors.New("parent workingset not finalized")
+	if parent != nil {
+		// TODO: need mutex to access finalized
+		if !parent.finalized {
+			return nil, errors.New("parent workingset not finalized")
+		}
+		newView := protocol.View{}
+		if deposit, err := parent.ReadDeposit("staking"); err == nil {
+			newView.Write("staking", deposit)
+		}
+		store = newStateDBWorkingSetStore(newView, flusher, g.IsNewfoundland(height))
+	} else {
+		store = newStateDBWorkingSetStore(sdb.protocolView, flusher, g.IsNewfoundland(height))
+	}
+	if err := store.Start(ctx); err != nil {
+		return nil, err
 	}
 	return newWorkingSet(height, store, parent), nil
 }
@@ -436,6 +447,10 @@ func (sdb *stateDB) States(opts ...protocol.StateOption) (uint64, state.Iterator
 // ReadView reads the view
 func (sdb *stateDB) ReadView(name string) (interface{}, error) {
 	return sdb.protocolView.Read(name)
+}
+
+func (sdb *stateDB) ReadDeposit(name string) (interface{}, error) {
+	panic("should not be called")
 }
 
 //======================================

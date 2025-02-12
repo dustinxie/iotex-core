@@ -118,6 +118,18 @@ func (view View) Write(name string, v interface{}) error {
 	return nil
 }
 
+func (view View) ReadDeposit(name string) (interface{}, error) {
+	if v, hit := view[name+"deposit"]; hit {
+		return v, nil
+	}
+	return nil, ErrNoName
+}
+
+func (view View) WriteDeposit(name string, v interface{}) error {
+	view[name+"deposit"] = v
+	return nil
+}
+
 // HashStringToAddress generates the contract address from the protocolID of each protocol
 func HashStringToAddress(str string) address.Address {
 	h := hash.Hash160b([]byte(str))

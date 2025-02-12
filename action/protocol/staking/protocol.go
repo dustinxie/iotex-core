@@ -377,7 +377,7 @@ func (p *Protocol) PreCommit(ctx context.Context, sm protocol.StateManager) erro
 		return err
 	}
 	cc := csm.DirtyView().candCenter
-	base := cc.base.clone()
+	base := cc.base.cloneLegacy()
 	if _, err = base.commit(cc.change, featureWithHeightCtx.CandCenterHasAlias(height)); err != nil {
 		return errors.Wrap(err, "failed to apply candidate change in pre-commit")
 	}
@@ -421,7 +421,9 @@ func (p *Protocol) Handle(ctx context.Context, elp action.Envelope, sm protocol.
 	if err != nil {
 		return nil, err
 	}
-	return p.handle(ctx, elp, csm)
+	r, err := p.handle(ctx, elp, csm)
+	csm.SM().WriteDeposit(_protocolID, csm.(*candSM).CloneView())
+	return r, err
 }
 
 func (p *Protocol) handle(ctx context.Context, elp action.Envelope, csm CandidateStateManager) (*action.Receipt, error) {

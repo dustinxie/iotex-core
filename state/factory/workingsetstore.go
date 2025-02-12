@@ -25,6 +25,8 @@ type (
 		ResetSnapshots()
 		ReadView(string) (interface{}, error)
 		WriteView(string, interface{}) error
+		ReadDeposit(string) (interface{}, error)
+		WriteDeposit(string, interface{}) error
 	}
 	workingSetStoreCommon struct {
 		view    protocol.View
@@ -42,6 +44,14 @@ func (store *workingSetStoreCommon) WriteView(name string, value interface{}) er
 
 func (store *workingSetStoreCommon) GetDirty(ns string, key []byte) ([]byte, error) {
 	return store.flusher.KVStoreWithBuffer().GetDirty(ns, key)
+}
+
+func (store *workingSetStoreCommon) ReadDeposit(name string) (interface{}, error) {
+	return store.view.ReadDeposit(name)
+}
+
+func (store *workingSetStoreCommon) WriteDeposit(name string, value interface{}) error {
+	return store.view.WriteDeposit(name, value)
 }
 
 func (store *workingSetStoreCommon) Put(ns string, key []byte, value []byte) error {

@@ -5,6 +5,30 @@
 
 package staking
 
+func (cb *candBase) cloneLegacy() *candBase {
+	cb.lock.RLock()
+	defer cb.lock.RUnlock()
+	clone := newCandBase()
+	for name, cand := range cb.nameMap {
+		clone.nameMap[name] = cand.Clone()
+	}
+	for owner, cand := range cb.ownerMap {
+		clone.ownerMap[owner] = cand.Clone()
+	}
+	for operator, cand := range cb.operatorMap {
+		clone.operatorMap[operator] = cand.Clone()
+	}
+	for bucket, cand := range cb.selfStkBucketMap {
+		clone.selfStkBucketMap[bucket] = cand.Clone()
+	}
+	if len(cb.owners) > 0 {
+		for _, cand := range cb.owners {
+			clone.owners = append(clone.owners, cand.Clone())
+		}
+	}
+	return clone
+}
+
 func (cb *candBase) clone() *candBase {
 	cb.lock.RLock()
 	defer cb.lock.RUnlock()
@@ -20,6 +44,9 @@ func (cb *candBase) clone() *candBase {
 	}
 	for bucket, cand := range cb.selfStkBucketMap {
 		clone.selfStkBucketMap[bucket] = cand.Clone()
+	}
+	for bucket, cand := range cb.identifierMap {
+		clone.identifierMap[bucket] = cand.Clone()
 	}
 	if len(cb.owners) > 0 {
 		for _, cand := range cb.owners {

@@ -128,6 +128,18 @@ func (csm *candSM) DirtyView() *ViewData {
 	}
 }
 
+func (csm *candSM) CloneView() *ViewData {
+	// create a clone, and deposit to view
+	clone := &CandidateCenter{
+		base: csm.candCenter.base.clone(),
+	}
+	clone.SetDelta(csm.candCenter.Delta())
+	return &ViewData{
+		candCenter: clone,
+		bucketPool: csm.bucketPool.Copy(true),
+	}
+}
+
 func (csm *candSM) ContainsName(name string) bool {
 	return csm.candCenter.ContainsName(name)
 }
@@ -170,7 +182,6 @@ func (csm *candSM) Upsert(d *Candidate) error {
 	if len(delta) == 0 {
 		return nil
 	}
-
 	// load change to sm
 	return csm.StateManager.Load(_protocolID, _stakingCandCenter, &delta)
 }

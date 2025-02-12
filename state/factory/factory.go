@@ -579,6 +579,10 @@ func (sf *factory) ReadView(name string) (interface{}, error) {
 	return sf.protocolView.Read(name)
 }
 
+func (sf *factory) ReadDeposit(name string) (interface{}, error) {
+	panic("should not be called")
+}
+
 //======================================
 // private trie constructor functions
 //======================================
